@@ -88,15 +88,15 @@ import "github.com/TeaMeow/Mego"
 
 func main() {
 	// 初始化一個基本的 Mego 引擎。
-  e := mego.Default()
-  // 定義一個 User 方法供客戶端呼叫。
-  e.Register("GetUser", func(c *mego.Context){
-    // 回應 `{"username": "YamiOdymel"}` 資料。
-    c.Respond(mego.StatusOK, mego.H{
-      "username": "YamiOdymel",
-    })
-  })
-  // 執行引擎在埠口 80 上。
+	e := mego.Default()
+	// 定義一個 User 方法供客戶端呼叫。
+	e.Register("GetUser", func(c *mego.Context) {
+		// 回應 `{"username": "YamiOdymel"}` 資料。
+		c.Respond(mego.StatusOK, mego.H{
+			"username": "YamiOdymel",
+		})
+	})
+	// 執行引擎在埠口 5000 上。
 	e.Run()
 }
 ```
@@ -107,7 +107,8 @@ func main() {
 ws = new Mego('ws://localhost/')
 
 ws.on('open', () => {
-  resp = await ws.call('getUser')
-  console.log(resp.result.username) // 輸出：YamiOdymel
+    ws.call('getUser').then(({result}) => {
+        console.log(result.username) // 輸出：YamiOdymel
+    })
 })
 ```
