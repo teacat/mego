@@ -12,17 +12,19 @@ type Session struct {
 
 // Disconnect 會結束掉這個階段的連線。
 func (s *Session) Disconnect() error {
-
+	return nil
 }
 
 // Copy 會複製一份 `Session` 供你在 Goroutine 中操作不會遇上資料競爭與衝突問題。
 func (s *Session) Copy() *Session {
-
+	sess := *s
+	return &sess
 }
 
 // Get 會取得客戶端當初建立連線時所傳入的資料特定鍵值組。
 func (s *Session) Get(name string) (v interface{}, ok bool) {
 	v, ok = s.Jar[name]
+	return
 }
 
 // GetBool 能夠以布林值取得指定的參數。

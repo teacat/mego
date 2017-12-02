@@ -1,6 +1,9 @@
 package mego
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Context 是單次請求中的上下文建構體。
 type Context struct {
@@ -15,7 +18,7 @@ type Context struct {
 	// Session 是產生此連線的客戶端階段建構體。
 	Session *Session
 
-	//
+	// isAborted 表示了這個請求是不是以已經被終止了。
 	isAborted bool
 }
 
@@ -82,7 +85,7 @@ func (c *Context) Bind(dest interface{}) error {
 
 // MustBind 和 `Bind` 相同，差異在於若映射失敗會呼叫 `panic` 並阻止此次請求繼續執行。
 func (c *Context) MustBind(dest interface{}) error {
-	return nil
+	panic(err)
 }
 
 // Set 會在本次的 Session 中存放指定的鍵值組內容，可供下次相同客戶端呼叫時存取。
@@ -92,7 +95,10 @@ func (c *Context) Set(key string, value interface{}) {
 
 // MustGet 和 `Get` 相同，但沒有該鍵值組時會呼叫 `panic`。
 func (c *Context) MustGet(key string) interface{} {
-
+	if v, ok := c.Get(key); ok {
+		return v
+	}
+	panic(fmt.Sprintf("Key %s does not exist", key))
 }
 
 // Get 會取得先前以 `Set` 存放在本次 Session 中的指定鍵值組。
