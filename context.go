@@ -58,7 +58,7 @@ func (c *Context) AbortWithRespond(code int, result interface{}) error {
 }
 
 // AbortWithError 結束此次請求，避免繼續執行。並以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
-func (c *Context) AbortWithError(code int, err interface{}, msg string) error {
+func (c *Context) AbortWithError(code int, result interface{}, err error) error {
 	c.isAborted = true
 	return nil
 }
@@ -74,7 +74,7 @@ func (c *Context) Status(code int) error {
 }
 
 // RespondWithError 會以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
-func (c *Context) RespondWithError(code int, err interface{}, msg string) error {
+func (c *Context) RespondWithError(code int, result interface{}, err error) error {
 	return nil
 }
 

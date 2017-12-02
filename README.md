@@ -69,6 +69,9 @@ Mego 是基於 [`net/http`](https://golang.org/pkg/net/http/) 和 [`olahol/melod
 
 # 索引
 
+* [安裝方式](#安裝方式)
+
+
 # 安裝方式
 
 打開終端機並且透過 `go get` 安裝此套件即可。
@@ -89,7 +92,7 @@ import "github.com/TeaMeow/Mego"
 func main() {
 	// 初始化一個基本的 Mego 引擎。
 	e := mego.Default()
-	// 定義一個 User 方法供客戶端呼叫。
+	// 定義一個 GetUser 方法供客戶端呼叫。
 	e.Register("GetUser", func(c *mego.Context) {
 		// 回應 `{"username": "YamiOdymel"}` 資料。
 		c.Respond(mego.StatusOK, mego.H{
@@ -111,4 +114,94 @@ ws.on('open', () => {
         console.log(result.username) // 輸出：YamiOdymel
     })
 })
+```
+
+# 使用方式
+
+## 初始化引擎
+
+```go
+//
+e := mego.Default()
+
+//
+e := mego.New()
+```
+
+## 廣播與建立事件
+
+```go
+// 建立一個 `UpdateApp` 才能供客戶端監聽。
+e.Event("UpdateApp")
+
+// 廣播一個 `UpdateApp` 事件給所有監聽的客戶端，觸發其事件監聽函式。
+e.Emit("UpdateApp")
+
+// 廣播一個 `UpdateApp` 事件並帶有指定的資料供客戶端讀取。
+e.Emit("UpdateApp", mego.H{
+	"version": "1.0.0",
+})
+```
+
+```go
+e.Event("UpdateApp")
+
+// 對指定的 [0] 與 [1] 客戶端廣播 `UpdateApp` 事件，其他客戶端不會接收到此事件。
+e.EmitMultiple("UpdateApp", nil, []*mego.Session{
+	e.Sessions[0],
+	e.Sessions[1],
+})
+```
+
+```go
+e.Event("UpdateApp")
+
+// 過濾所有客戶端，僅有 ID 為 `0k3LbEjL` 的才能夠接收到 UpdateApp 事件。
+e.EmitFilter("UpdateApp", nil, func(s *mego.Session) bool {
+	// 此函式會過濾、遍歷每個客戶端，如果此函式回傳 `true` 則會接收到此事件。
+	return s.ID == "0k3LbEjL"
+})
+```
+
+##
+
+```go
+e.Register("CreateUser", func(c *mego.Context) {
+	// 針對此請求，回傳一個指定的狀態碼與資料。
+	c.Respond(mego.StatusOK, mego.H{
+		"message": "成功建立使用者！",
+	})
+
+	// 針對此請求，僅回傳一個狀態碼並省去多餘的資料內容。
+	c.Status(mego.StatusOK)
+
+	// 針對此請求，回傳一個錯誤相關資料與狀態碼，還有錯誤本身。
+	c.RespondWithError(mego.StatusError, mego.H{
+		"empty": "username",
+	}, errors.New("使用者名稱不可為空。"))
+})
+```
+
+```go
+// logMw 是一個會紀錄請求編號的紀錄中介軟體。
+logMw := func(c *mego.Context) {
+  fmt.Printf("%s 已連線。", c.ID)
+  // ... 紀錄邏輯 ...
+  c.Next()
+}
+
+// authMw 是一個驗證請求者是否有權限的身份檢查中介軟體。
+authMw := func(c *mego.Context) {
+  if c.ID != "King" {
+    // ... 驗證邏輯 ...
+  }
+  c.Next()
+}
+
+// 在 Mego 引擎中使用上述兩個全域中介軟體。
+e.Use(logMw, authMw)
+```
+
+```go
+
 ```
