@@ -9,6 +9,7 @@
 
 &nbsp;
 
+# // WIP - 尚未完成 //
 
 # Mego
 
@@ -79,3 +80,22 @@ $ go get github.com/TeaMeow/Mego
 # 開始使用
 
 Mego 的使用方式參考令人容易上手的 [Gin 網站框架](https://github.com/gin-gonic/gin)，令你撰寫 WebSocket 就像在撰寫普通的網站框架ㄧ樣容易。
+
+
+```go
+import "github.com/TeaMeow/Mego"
+
+func main() {
+	// 初始化一個基本的 Mego 引擎。
+  e := mego.Default()
+  // 定義一個 GetUser 方法供客戶端呼叫。
+  e.Register("User", func(c *mego.Context){
+    // 回應 `{"username": "YamiOdymel"}` 資料。
+    c.Respond(mego.StatusOK, mego.H{
+      "username": "YamiOdymel",
+    })
+  })
+  // 執行引擎在埠口 80 上。
+	e.Run()
+}
+```
