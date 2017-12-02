@@ -135,7 +135,7 @@ e := mego.New()
 e.Event("UpdateApp")
 
 // 廣播一個 `UpdateApp` 事件給所有監聽的客戶端，觸發其事件監聽函式。
-e.Emit("UpdateApp")
+e.Emit("UpdateApp", nil)
 
 // 廣播一個 `UpdateApp` 事件並帶有指定的資料供客戶端讀取。
 e.Emit("UpdateApp", mego.H{
@@ -144,6 +144,7 @@ e.Emit("UpdateApp", mego.H{
 ```
 
 ```go
+// 建立一個 `UpdateApp` 才能供客戶端監聽。
 e.Event("UpdateApp")
 
 // 對指定的 [0] 與 [1] 客戶端廣播 `UpdateApp` 事件，其他客戶端不會接收到此事件。
@@ -154,6 +155,7 @@ e.EmitMultiple("UpdateApp", nil, []*mego.Session{
 ```
 
 ```go
+// 建立一個 `UpdateApp` 才能供客戶端監聽。
 e.Event("UpdateApp")
 
 // 過濾所有客戶端，僅有 ID 為 `0k3LbEjL` 的才能夠接收到 UpdateApp 事件。
@@ -163,7 +165,42 @@ e.EmitFilter("UpdateApp", nil, func(s *mego.Session) bool {
 })
 ```
 
+
+
 ##
+
+
+```go
+// User 是一個使用者資料建構體。
+type User struct {
+	Username string
+}
+
+e.Register("CreateUser", func(c *mego.Context) {
+	var u User
+
+	// 將接收到的資料映射到本地的使用者資料建構體，這樣才能讀取其資料。
+	if c.Bind(&u) == nil {
+		fmt.Println(u.Username)
+	}
+
+	// 透過 `MustBind` 在映射錯誤時直接呼叫 `panic` 終止此請求繼續。
+	c.MustBind(&u)
+	fmt.Println(u.Username)
+})
+```
+
+```go
+e.Register("Sum", func(c *mego.Context) {
+	// 以正整數資料型態取得傳入的兩個參數。
+	a := c.Params.GetInt(0)
+	b := c.Params.GetInt(1)
+
+	// 將兩個轉換成正整數的參數進行相加取得結果。
+	fmt.Printf("A + B = %d", a+b)
+})
+```
+
 
 ```go
 e.Register("CreateUser", func(c *mego.Context) {
@@ -183,19 +220,32 @@ e.Register("CreateUser", func(c *mego.Context) {
 ```
 
 ```go
+// 建立一個 `UpdateApp` 才能供客戶端監聽。
+e.Event("UpdateApp")
+
+e.Register("CreateUser", func(c *mego.Context) {
+	// 廣播 UpdateApp 事件給產生此請求的客戶端。
+	c.Emit("UpdateApp", nil)
+
+	// 廣播 UpdateApp 事件給產生此請求客戶端以外的「所有其他人」。
+	c.EmitOthers("UpdateApp", nil)
+})
+```
+
+```go
 // logMw 是一個會紀錄請求編號的紀錄中介軟體。
 logMw := func(c *mego.Context) {
-  fmt.Printf("%s 已連線。", c.ID)
-  // ... 紀錄邏輯 ...
-  c.Next()
+	fmt.Printf("%s 已連線。", c.ID)
+	// ... 紀錄邏輯 ...
+	c.Next()
 }
 
 // authMw 是一個驗證請求者是否有權限的身份檢查中介軟體。
 authMw := func(c *mego.Context) {
-  if c.ID != "King" {
-    // ... 驗證邏輯 ...
-  }
-  c.Next()
+	if c.ID != "King" {
+		// ... 驗證邏輯 ...
+	}
+	c.Next()
 }
 
 // 在 Mego 引擎中使用上述兩個全域中介軟體。
@@ -203,5 +253,129 @@ e.Use(logMw, authMw)
 ```
 
 ```go
+mw := func(c *mego.Context) {
+	// 從連線開始的時間。
+	start := time.Now()
+	// 呼叫下一個中介軟體或執行處理函式。
+	c.Next()
+	// 取得執行完畢後的時間。
+	end := time.Now()
 
+	// 將開始與結束的時間相減，取得此請求所耗費的時間。
+	fmt.Printf("此請求共花費了 %v 時間", end.Sub(start))
+}
+
+// 在 Mego 引擎中使用上述全域中介軟體。
+e.Use(mw)
+```
+
+```go
+mw := func(c *mego.Context) {
+	if c.ID != "jn3Dl74eX" {
+		// 直接終止此請求的繼續，並停止呼叫接下來的中介軟體與處理函式。
+		c.Abort()
+
+		// 終止此請求並回傳一個狀態碼。
+		c.AbortWithStatus(mego.StatusNoPermission)
+
+		// 終止此請求並且回傳狀態碼與資料。客戶端並不會知道是錯誤發生，仍會依一般回應處理。
+		c.AbortWithRespond(mego.StatusOK, mego.H{
+			"message": "嗨！雖然你不是 jn3Dl74eX 但我們還是很歡迎你！",
+		})
+
+		// 終止此請求並且回傳一個錯誤的資料與狀態碼和錯誤本體。
+		c.AbortWithError(mego.StatusNoPermission, nil, errors.New("沒有相關權限可訪問。"))
+	}
+}
+
+// 在 Mego 引擎中使用上述全域中介軟體。
+e.Use(mw)
+```
+
+```go
+mw := func(c *mego.Context) {
+	// 在上下文建構體中存入名為 `Foo` 的 `Bar` 值。
+	c.Set("Foo", "Bar")
+	// 呼叫下一個中介軟體或處理函式。
+	c.Next()
+}
+
+mw2 := func(c *mego.Context) {
+	// 檢查是否有 `Foo` 這個鍵名，若沒有則終止此請求繼續。
+	if v, ok := c.Get("Foo"); !ok {
+		c.Abort()
+	}
+	fmt.Println(v) // 輸出：Bar
+}
+
+// 在 Mego 引擎中使用上述兩個全域中介軟體。
+e.Use(mw, mw2)
+```
+
+```go
+mw := func(c *mego.Context) {
+	fmt.Println(c.GetString("Foo")) // 輸出：Bar
+
+	// c.GetInt()
+	// c.GetBool()
+	// c.GetStringMap()
+	// ...
+}
+```
+
+```go
+e.Recevie("Photo", func(c *mego.Context) {
+	c.Respond(mego.StatusOK, mego.H{
+		"filename":  c.File.Name,      // 檔案原始名稱。
+		"size":      c.File.Size,      // 檔案大小（位元組）。
+		"extension": c.File.Extension, // 檔案副檔名（無符號）。
+		"path":      c.File.Path,      // 檔案本地路徑。
+	})
+})
+```
+
+```go
+// 斷開客戶端 `HkBE9lebt` 與伺服器的連線。
+e.Sessions["HkBE9lebt"].Disconnect()
+
+// 或者你也不需要指名道姓⋯⋯。
+e.Register("CreateUser", func(c *mego.Context) {
+	// 直接斷開發送此請求的客戶端連線。
+	c.Session.Disconnect()
+})
+```
+
+```go
+e.Register("CreateUser", func(c *mego.Context) {
+	// 複製一份目前的上下文建構體。
+	copied := c.Copy()
+	// 然後在 Goroutine 中使用這個複製體。
+	go func() {
+		time.Sleep(5 * time.Second)
+		// ... 在這裡使用 copied 而非 c ...
+	}()
+})
+```
+
+
+```go
+// 這是一個錯誤中介軟體，會不斷地在上下文建構體中塞入一堆錯誤。
+errMw := func(c *mego.Context) {
+	// 透過 `Error` 能將錯誤訊息堆放置上下文建構體中，
+	// 並在最終一次獲得所有錯誤資訊。
+	c.Error(errors.New("這是超重要的錯誤訊息啊！"))
+	c.Error(errors.New("世界要毀滅啦！"))
+
+	c.Next()
+}
+
+// 在 Mego 引擎中使用上述全域中介軟體。
+e.Use(errMw)
+
+e.Register("CreateUser", func(c *mego.Context) {
+	// 檢查上下文建構體裡是否有任何錯誤。若有則回傳錯誤訊息給客戶端。
+	if len(c.Errors) != 0 {
+		c.AbortWithError(mego.StatusError, nil, c.Errors[0])
+	}
+})
 ```
