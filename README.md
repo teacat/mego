@@ -266,7 +266,7 @@ func main() {
 
 ## 處理請求與回應
 
-透過 `Respond` 正常回應一個客戶端的請求。以 `Status` 可以僅傳送狀態碼並省去多餘的資料。而 `RespondWithError` 可以回傳一個錯誤發生的詳細資料用已告知客戶端發生了錯誤。
+透過 `Respond` 正常回應一個客戶端的請求。以 `Status` 可以僅傳送狀態碼並省去多餘的資料。而 `RespondWithError` 可以回傳一個錯誤發生的詳細資料用已告知客戶端發生了錯誤。
 
 ```go
 func main() {
