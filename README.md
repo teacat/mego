@@ -88,6 +88,8 @@ Mego 是基於 [`net/http`](https://golang.org/pkg/net/http/) 和 [`olahol/melod
   * [複製並使用於 Goroutine](#複製並使用於-goroutine)
   * [錯誤處理](#錯誤處理)
   * [結束](#結束)
+* [狀態碼](#狀態碼)
+* [API 撰寫風格](#api-撰寫風格)
 
 
 # 安裝方式
@@ -561,4 +563,58 @@ func main() {
 
 ```go
 e.Close()
+```
+
+# 狀態碼
+
+在 Mego 中有內建這些狀態碼，但令 Mego 優於傳統 RESTful API 之處在於你可以自訂你自己的狀態碼。狀態碼是由數字奠定，從 `0` 到 `50` 都是成功，`51` 到 `100` 則是錯誤，如果你想要自訂自己的狀態碼，請從 `101` 開始。
+
+| 狀態碼                   | 語義 | 說明                                                                      |
+|-------------------------|-----|---------------------------------------------------------------------------|
+| StatusOK                | 成功 | 任何事情都很 Okay。                                                        |
+| StatusProcessing        | 成功 | 已成功傳送請求，但現在還不會完成，將會在背景中進行。                              |
+| StatusNoChanges         | 成功 | 這項請求沒有改變什麼事情，例如刪除了早就不存在的事物。                            |
+| StatusError             | 錯誤 | 內部錯誤發生，可能是非預期的錯誤。                                             |
+| StatusFull              | 錯誤 | 請求因為已滿而被拒絕，例如：好友清單已滿無法新增、聊天室人數已滿無法加入。            |
+| StatusExists            | 錯誤 | 已經有相同的事物存在而被拒絕。                                                 |
+| StatusInvalid           | 錯誤 | 格式無效而被拒絕，通常是不符合表單驗證要求。                                     |
+| StatusNotFound          | 錯誤 | 找不到指定資源。                                                            |
+| StatusNotAuthorized     | 錯誤 | 請求被拒。沒有驗證的身份，需要登入以進行驗證。                                   |
+| StatusNoPermission      | 錯誤 | 已驗證身份，但沒有權限提出此請求因而被拒。                                      |
+| StatusUnimplemented     | 錯誤 | 此功能尚未實作完成，如果呼叫了一個不存在的函式即會回傳此狀態。                     |
+| StatusTooManyRequests   | 錯誤 | 使用者在短時間內發送太多的請求，請稍後重試。                                    |
+| StatusResourceExhausted | 錯誤 | 預定給使用者的配額已經被消耗殆盡，例如可用次數、分配容量。                        |
+| StatusBusy              | 錯誤 | 伺服器正處於忙碌狀態，請稍候重試。                                            |
+
+# API 撰寫風格
+
+由於不受傳統 RESTful 風格的拘束，你可以很輕易地就透過 Markdown 格式規劃出 Mego 的 API 文件。我們有現成的[使用者 API 範例](./examples/doc/User%20API.md)可供參考。
+
+```markdown
+# 會員系統
+
+與會員、使用者有關的 API。
+
+## 建立會員 [createUser]
+
+建立一個新的使用者並在之後可透過註冊時所使用的帳號與密碼進行登入。
+
++ 請求
+
+    + 欄位
+        + username (string!) - 帳號。
+        + password (string!) - 密碼。
+        + email (string!) - 電子郵件地址。
+        + gender (int!)
+
+            使用者的性別採用編號以節省資料空間並在未來有更大的彈性進行變動。0 為男性、1 為女性。
+
+    + 內容
+
+            {
+                "username": "YamiOdymel",
+                "password": "yami123456",
+                "email": "yamiodymel@yami.io",
+                "gender": 1
+            }
 ```
