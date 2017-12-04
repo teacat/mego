@@ -88,6 +88,7 @@ Mego 是基於 [`net/http`](https://golang.org/pkg/net/http/) 和 [`olahol/melod
   * [複製並使用於 Goroutine](#複製並使用於-goroutine)
   * [錯誤處理](#錯誤處理)
   * [結束](#結束)
+* [客戶端](#客戶端)
 * [狀態碼](#狀態碼)
 * [API 撰寫風格](#api-撰寫風格)
 
@@ -564,6 +565,77 @@ func main() {
 ```go
 e.Close()
 ```
+
+# 客戶端
+
+
+```js
+ws = new Mego('ws://localhost/')
+```
+
+`open`, `close`, `message`, `error`
+
+```js
+ws.on('open', () => {
+	console.log('成功連線！')
+})
+```
+
+```js
+ws.reconnect()
+```
+
+```js
+ws.file()
+```
+
+```js
+//
+ws.call('sum', [5, 3]).then(({result}) => {
+
+})
+
+//
+ws.call('createUser', {
+	username: 'YamiOdymel'
+}).then(({result}) => {
+
+})
+```
+
+```js
+//
+var result = await ws.call('Sum', [5, 3])
+
+//
+var result = await ws.call('createUser', {
+	username: 'YamiOdymel'
+})
+```
+
+```js
+//
+ws.notify('newUser')
+```
+
+```js
+//
+ws.subscribe('newMessage')
+
+//
+ws.on('newMessage', (event) => {
+
+})
+```
+
+```js
+ws.unsubscribe('newMessage')
+```
+
+```js
+ws.close()
+```
+
 
 # 狀態碼
 
