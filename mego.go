@@ -3,6 +3,8 @@ package mego
 import (
 	"net/http"
 
+	"github.com/vmihailenco/msgpack"
+
 	"github.com/olahol/melody"
 )
 
@@ -47,8 +49,8 @@ const (
 	StatusFileRetry = 70
 	// StatusFileEmpty 表示上傳的檔案、區塊是空的。
 	StatusFileEmpty = 71
-	// StatusFileSize 表示檔案過大無法上傳。
-	StatusFileSize = 72
+	// StatusFileTooLarge 表示檔案過大無法上傳。
+	StatusFileTooLarge = 72
 )
 
 // H 是常用的資料格式，簡單說就是 `map[string]interface{}` 的別名。
@@ -59,7 +61,11 @@ type HandlerFunc func(*Context)
 
 // New 會建立一個新的 Mego 空白引擎。
 func New() *Engine {
-	return &Engine{}
+	return &Engine{
+		Sessions: make(map[string]*Session),
+		Events:   make(map[string]*Event),
+		Methods:  make(map[string]*Method),
+	}
 }
 
 // server 是基礎伺服器用來與基本 HTTP 連線進行互動。
@@ -78,18 +84,57 @@ type Engine struct {
 	Sessions map[string]*Session
 	// Events 儲存了所有可用的事件與其監聽的客戶端資料。
 	Events map[string]*Event
+	// Methods 是所有可用的方法切片。
+	Methods map[string]*Method
+	// Option 是這個引擎的設置。
+	Option *EngineOption
 	// middlewares 是保存將會執行的全域中介軟體切片。
 	middlewares []HandlerFunc
-	// methods 是所有可用的方法切片。
-	methods map[string][]HandlerFunc
-	//
+	// noMethod 是當呼叫不存在方式時所會呼叫的處理函式。
 	noMethod []HandlerFunc
-	//
-	noEvent []HandlerFunc
+}
+
+// EngineOption 是引擎的選項設置。
+type EngineOption struct {
+	// MaxSize 是這個方法允許接收的最大位元組（Bytes）。
+	MaxSize int
+	// MaxChunkSize 是這個方法允許的區塊最大位元組（Bytes）。
+	MaxChunkSize int
+	// MaxFileSize 是這個方法允許的檔案最大位元組（Bytes），會在每次接收區塊時結算總計大小，
+	// 如果超過此大小則停止接收檔案。
+	MaxFileSize int
+	// MaxSessions 是引擎能容忍的最大階段連線數量。
+	MaxSessions int
+	// CheckInterval 是每隔幾秒進行一次階段是否仍存在的連線檢查，
+	// 此為輕量檢查而非發送回應至客戶端。
+	CheckInterval int
+}
+
+// Method 呈現了一個方法。
+type Method struct {
+	// Name 是此方法的名稱。
+	Name string
+	// Handlers 是中介軟體與處理函式。
+	Handlers []HandlerFunc
+	// ChunkProcessor 是區塊處理介面，如果此方法不允許檔案上傳則忽略此欄位。
+	ChunkProcessor ChunkProcessor
+	// Option 是此方法的選項。
+	Option *MethodOption
+}
+
+// MethodOption 是一個方法的選項。
+type MethodOption struct {
+	// MaxSize 是這個方法允許接收的最大位元組（Bytes）。此選項會覆蓋引擎設定。
+	MaxSize int
+	// MaxChunkSize 是這個方法允許的區塊最大位元組（Bytes）。此選項會覆蓋引擎設定。
+	MaxChunkSize int
+	// MaxFileSize 是這個方法允許的檔案最大位元組（Bytes），會在每次接收區塊時結算總計大小，
+	// 如果超過此大小則停止接收檔案。此選項會覆蓋引擎設定。
+	MaxFileSize int
 }
 
 // Run 會在指定的埠口執行 Mego 引擎。
-func (e *Engine) Run(port string) {
+func (e *Engine) Run(port ...string) {
 	// 初始化一個 Melody 套件框架並當作 WebSocket 底層用途。
 	m := melody.New()
 	// 以 WebSocket 初始化一個底層伺服器。
@@ -97,8 +142,19 @@ func (e *Engine) Run(port string) {
 		websocket: m,
 	}
 
+	// 設定預設埠口。
+	p := ":5000"
+	if len(port) > 0 {
+		p = port[0]
+	}
+
+	m.HandleMessage(func(s *melody.Session, msg []byte) {
+		m.Broadcast(msg)
+		msgpack.Unmarshal(msg)
+	})
+
 	// 開始在指定埠口監聽 HTTP 請求並交由底層伺服器處理。
-	http.ListenAndServe(port, s)
+	http.ListenAndServe(p, s)
 }
 
 // Use 會使用傳入的中介軟體作為全域使用。
@@ -123,12 +179,6 @@ func (e *Engine) NoMethod(handler ...HandlerFunc) *Engine {
 	return e
 }
 
-// NoEvent 會在客戶端監聽不存在事件時被執行。
-func (e *Engine) NoEvent(handler ...HandlerFunc) *Engine {
-	e.noEvent = handler
-	return e
-}
-
 // Event 會建立一個新的事件，如此一來客戶端方能監聽。
 func (e *Engine) Event(name string) {
 	e.Events[name] = &Event{
@@ -138,7 +188,7 @@ func (e *Engine) Event(name string) {
 
 // Register 會註冊一個指定的方法，並且允許客戶端呼叫此方法觸發指定韓式。
 func (e *Engine) Register(method string, handler ...HandlerFunc) {
-	e.methods[method] = handler
+	e.Methods[method] = handler
 }
 
 // Emit 會帶有指定資料並向所有人廣播指定事件。
@@ -159,5 +209,14 @@ func (e *Engine) EmitFilter(event string, payload interface{}, filter func(*Sess
 
 // Receive 會建立一個指定的方法，並且允許客戶端傳送檔案至此方法。
 func (e *Engine) Receive(method string, handler ...HandlerFunc) {
+	// 初始化一個內建的預設區塊處理方法。
+	var processor ChunkProcessor
+	processor = &DefaultChunkProcessor{}
+
+	e.ReceiveWith(method, processor, handler...)
+}
+
+// ReceiveWith 會透過自訂的區塊處理函式建立指定方法，讓客戶端可上傳檔案至此方法並透過自訂方式進行處理。
+func (e *Engine) ReceiveWith(method string, processor ChunkProcessor, handler ...HandlerFunc) {
 
 }
