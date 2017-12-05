@@ -92,16 +92,16 @@ Mego 是基於 [`net/http`](https://golang.org/pkg/net/http/) 和 [`olahol/melod
   * [連線](#連線)
   	* [重啟連線](#重啟連線)
   	* [斷開連線](#斷開連線)
+  * [呼叫伺服端](#呼叫伺服端)
+  	* [透過 ES7 的 Async、Await](#透過-es7-的-async、await)
+	* [錯誤處理](#錯誤處理)
   * [事件監聽](#事件監聽)
   	* [訂閱自訂事件](#訂閱自訂事件)
   	* [取消訂閱](#取消訂閱)
   * [檔案上傳](#檔案上傳)
-  * [呼叫伺服端](#呼叫伺服端)
-  	* [透過 ES7 的 Async、Await](#透過-es7-的-async、await)
-	* [錯誤處理](#錯誤處理)
   * [通知](#通知)
 * [狀態碼](#狀態碼)
-* [API 撰寫風格](#api-撰寫風格)
+* [API 文件撰寫風格](#api-文件撰寫風格)
 
 
 # 安裝方式
@@ -473,6 +473,77 @@ func main() {
 }
 ```
 
+### 內建中介軟體
+
+Mego 有內建數個方便的中介軟體能夠讓你限制同時連線數，或使用內建的簡易記錄系統⋯等。
+
+如果你使用 `Default` 建立了一個 Mego 引擎，該引擎則包含自動回復與請求紀錄中介軟體。
+
+#### 自動回復
+
+單個方法發生 `panic` 時，`Recovery` 可以自動回復並在終端機顯示相關錯誤訊息供除錯。
+
+此中介軟體能避免整個 Mego 引擎被強制關閉。
+
+```go
+func main() {
+	e := mego.New()
+	e.Use(mego.Recovery())
+}
+```
+
+#### 請求紀錄
+
+`Logger` 會在終端機即時顯示任何請求，方便開發者進行監控。
+
+```go
+func main() {
+	e := mego.New()
+	e.Use(mego.Logger())
+}
+```
+
+#### 配額限制
+
+如果你希望限制客戶端在單個方法的某個時間內僅能呼叫數次，透過 `RateLimit` 就能達成。
+
+選項中的 `Period` 表示週期秒數，`Limit` 表示客戶端可在週期內呼叫幾次相同方法。
+
+```go
+func main() {
+	e := mego.Default()
+
+	e.Register("CreateUser", mego.RateLimit(mego.RateLimitOption{
+		Period: 1 * time.Hour,
+		Limit: 100
+	}), func(c *mego.Context) {
+		// ...
+	})
+
+	e.Run()
+}
+```
+
+#### 同時請求數
+
+為了避免某個方法特別繁忙，透過 `RequestLimit` 可以限制單個方法的最大同時連線數。
+
+選項中的 `Limit` 表示單個方法最大僅能有幾個客戶端同時呼叫。
+
+```go
+func main() {
+	e := mego.Default()
+
+	e.Register("CreateUser", mego.RequestLimit(mego.RequestLimitConfig{
+		Limit: 1000
+	}), func(c *mego.Context) {
+		// ...
+	})
+
+	e.Run()
+}
+```
+
 ## 檔案上傳處理
 
 Mego 能夠自動幫你處理透過 WebSocket 所上傳的檔案。透過 `File` 建構體可以取得客戶端上傳的檔案資料。
@@ -606,48 +677,6 @@ ws.reconnect()
 ws.close()
 ```
 
-## 事件監聽
-
-基本的內建事件有 `open`（連線）, `close`（連線關閉）, `reopen`（重新連線）, `message`（收到資料）, `error`（錯誤、斷線）可供監聽。
-
-```js
-ws.on('open', () => {
-	console.log('成功連線！')
-})
-```
-
-### 訂閱自訂事件
-
-你也能以 `subscribe` 訂閱並透過 `on` 來監聽伺服器的自訂事件。用在聊天室檢查新訊息是最方便不過的了。
-
-```js
-// 先告訴伺服器我們要訂閱 `newMessage` 事件。
-ws.subscribe('newMessage')
-
-// 當接收到 `newMessage` 事件時所執行的處理函式。
-ws.on('newMessage', ({result}) => {
-	console.log('收到 newMessage 事件！')
-})
-```
-
-### 取消訂閱
-
-透過 `unsubscribe` 將自己從遠端伺服器上的指定事件監聽列表中移除。
-
-```js
-ws.unsubscribe('newMessage')
-```
-
-## 檔案上傳
-
-透過
-
-```js
-ws.file("photo", file).then(({result}) => {
-	console.log('檔案上傳完畢。')
-})
-```
-
 ## 呼叫伺服端
 
 透過 `call` 可以呼叫伺服端並執行指定方法，且取得相關結果。倘若傳入的資料是一個陣列則會被當作參數對待，伺服端可以更加快速地使用該資料。
@@ -705,6 +734,48 @@ try {
 }
 ```
 
+## 事件監聽
+
+基本的內建事件有 `open`（連線）, `close`（連線關閉）, `reopen`（重新連線）, `message`（收到資料）, `error`（錯誤、斷線）可供監聽。
+
+```js
+ws.on('open', () => {
+	console.log('成功連線！')
+})
+```
+
+### 訂閱自訂事件
+
+你也能以 `subscribe` 訂閱並透過 `on` 來監聽伺服器的自訂事件。用在聊天室檢查新訊息是最方便不過的了。
+
+```js
+// 先告訴伺服器我們要訂閱 `newMessage` 事件。
+ws.subscribe('newMessage')
+
+// 當接收到 `newMessage` 事件時所執行的處理函式。
+ws.on('newMessage', ({result}) => {
+	console.log('收到 newMessage 事件！')
+})
+```
+
+### 取消訂閱
+
+透過 `unsubscribe` 將自己從遠端伺服器上的指定事件監聽列表中移除。
+
+```js
+ws.unsubscribe('newMessage')
+```
+
+## 檔案上傳
+
+透過
+
+```js
+ws.file("photo", file).then(({result}) => {
+	console.log('檔案上傳完畢。')
+})
+```
+
 ## 通知
 
 透過 `notify` 來向伺服器廣播一個通知，且不要求回應與夾帶資料。
@@ -718,24 +789,24 @@ ws.notify('newUser')
 
 在 Mego 中有內建這些狀態碼，但令 Mego 優於傳統 RESTful API 之處在於你可以自訂你自己的狀態碼。狀態碼是由數字奠定，從 `0` 到 `50` 都是成功，`51` 到 `100` 則是錯誤，如果你想要自訂自己的狀態碼，請從 `101` 開始。
 
-| 狀態碼                   | 語義 | 說明                                                                      |
-|-------------------------|-----|---------------------------------------------------------------------------|
-| StatusOK                | 成功 | 任何事情都很 Okay。                                                        |
-| StatusProcessing        | 成功 | 已成功傳送請求，但現在還不會完成，將會在背景中進行。                              |
-| StatusNoChanges         | 成功 | 這項請求沒有改變什麼事情，例如刪除了早就不存在的事物。                            |
-| StatusError             | 錯誤 | 內部錯誤發生，可能是非預期的錯誤。                                             |
-| StatusFull              | 錯誤 | 請求因為已滿而被拒絕，例如：好友清單已滿無法新增、聊天室人數已滿無法加入。            |
-| StatusExists            | 錯誤 | 已經有相同的事物存在而被拒絕。                                                 |
-| StatusInvalid           | 錯誤 | 格式無效而被拒絕，通常是不符合表單驗證要求。                                     |
-| StatusNotFound          | 錯誤 | 找不到指定資源。                                                            |
-| StatusNotAuthorized     | 錯誤 | 請求被拒。沒有驗證的身份，需要登入以進行驗證。                                   |
-| StatusNoPermission      | 錯誤 | 已驗證身份，但沒有權限提出此請求因而被拒。                                      |
-| StatusUnimplemented     | 錯誤 | 此功能尚未實作完成，如果呼叫了一個不存在的函式即會回傳此狀態。                     |
-| StatusTooManyRequests   | 錯誤 | 使用者在短時間內發送太多的請求，請稍後重試。                                    |
-| StatusResourceExhausted | 錯誤 | 預定給使用者的配額已經被消耗殆盡，例如可用次數、分配容量。                        |
-| StatusBusy              | 錯誤 | 伺服器正處於忙碌狀態，請稍候重試。                                            |
+| 狀態碼                   | 說明                                                                      |
+|-------------------------|--------------------------------------------------------------------------|
+| StatusOK                | 任何事情都很 Okay。                                                        |
+| StatusProcessing        | 已成功傳送請求，但現在還不會完成，將會在背景中進行。                              |
+| StatusNoChanges         | 這項請求沒有改變什麼事情，例如刪除了早就不存在的事物。                            |
+| StatusError             | 內部錯誤發生，可能是非預期的錯誤。                                             |
+| StatusFull              | 請求因為已滿而被拒絕，例如：好友清單已滿無法新增、聊天室人數已滿無法加入。            |
+| StatusExists            | 已經有相同的事物存在而被拒絕。                                                |
+| StatusInvalid           | 格式無效而被拒絕，通常是不符合表單驗證要求。                                     |
+| StatusNotFound          | 找不到指定資源。                                                            |
+| StatusNotAuthorized     | 請求被拒。沒有驗證的身份，需要登入以進行驗證。                                   |
+| StatusNoPermission      | 已驗證身份，但沒有權限提出此請求因而被拒。                                      |
+| StatusUnimplemented     | 此功能尚未實作完成，如果呼叫了一個不存在的函式即會回傳此狀態。                     |
+| StatusTooManyRequests   | 使用者在短時間內發送太多的請求，請稍後重試。                                    |
+| StatusResourceExhausted | 預定給使用者的配額已經被消耗殆盡，例如可用次數、分配容量。                        |
+| StatusBusy              | 伺服器正處於忙碌狀態，請稍候重試。                                            |
 
-# API 撰寫風格
+# API 文件撰寫風格
 
 由於不受傳統 RESTful 風格的拘束，你可以很輕易地就透過 Markdown 格式規劃出 Mego 的 API 文件。我們有現成的[使用者 API 範例](./examples/doc/User%20API.md)可供參考。
 
