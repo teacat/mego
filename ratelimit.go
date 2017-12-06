@@ -44,7 +44,7 @@ func RateLimit(conf RateLimitConfig) HandlerFunc {
 
 		// 如果請求次數大於限制就終止這個請求。
 		if store[c.Session.ID].count >= conf.Limit {
-			c.AbortWithStatus(StatusTooManyRequests)
+			c.AbortWithError(StatusTooManyRequests, nil, nil)
 			return
 		}
 

@@ -14,7 +14,7 @@ func RequestLimit(conf RequestLimitConfig) HandlerFunc {
 	return func(c *Context) {
 		// 如果大於限制就終止這個請求。
 		if count > conf.Limit {
-			c.AbortWithStatus(StatusBusy)
+			c.AbortWithError(StatusBusy, nil, nil)
 			return
 		}
 
