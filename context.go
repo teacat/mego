@@ -29,6 +29,8 @@ type Context struct {
 	ID int
 	// Request 是這個 WebSocket 的 HTTP 請求建構體。
 	Request *http.Request
+	//
+	Method *Method
 
 	// data 呈現了本次接收到的資料，主要是 MsgPack 內容格式。
 	data []byte
@@ -115,22 +117,16 @@ func (c *Context) Abort() {
 	c.index = abortIndex
 }
 
-// AbortWithStatus 終止此次請求，避免繼續執行。並以指定的狀態碼回應特定客戶端。
-func (c *Context) AbortWithStatus(code int) {
+// AbortWithRespond 終止此次請求，避免繼續執行。並以資料回應特定的客戶端。
+func (c *Context) AbortWithRespond(result interface{}) {
 	c.Abort()
-	c.Status(code)
-}
-
-// AbortWithRespond 終止此次請求，避免繼續執行。並以指定的狀態碼、資料回應特定的客戶端。
-func (c *Context) AbortWithRespond(code int, result interface{}) {
-	c.Abort()
-	c.Respond(code, result)
+	c.Respond(result)
 }
 
 // AbortWithError 結束此次請求，避免繼續執行。並以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
-func (c *Context) AbortWithError(code int, result interface{}, err error) {
+func (c *Context) AbortWithError(code int, data interface{}, err error) {
 	c.Abort()
-	c.RespondWithError(code, result, err)
+	c.RespondWithError(code, data, err)
 }
 
 func (c *Context) write(resp Response) {
@@ -147,14 +143,16 @@ func (c *Context) Respond(result interface{}) {
 	})
 }
 
-// Status 會回傳指定的狀態碼給客戶端。
-func (c *Context) Status(code int) {
-
-}
-
 // RespondWithError 會以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
-func (c *Context) RespondWithError(code int, result interface{}, err error) {
-
+func (c *Context) RespondWithError(code int, data interface{}, err error) {
+	c.write(Response{
+		Error: ResponseError{
+			Code:    code,
+			Data:    data,
+			Message: err.Error(),
+		},
+		ID: c.ID,
+	})
 }
 
 // Bind 能夠將接收到的資料映射到本地建構體。
