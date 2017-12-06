@@ -265,7 +265,7 @@ func main() {
 
 當客戶端傳送來的不是資料，而是普通陣列時會被當作參數看待。參數可以讓你更快進行處理而不需映射。
 
-透過 `Params.Get(index)` 取得指定索引的參數內容，亦有 `GetInt`、`GetString` 等方便的資料型態快捷函式。
+透過 `Param(index).Get()` 取得指定索引的參數內容，亦有 `GetInt`、`GetString` 等方便的資料型態快捷函式。
 
 ```go
 func main() {
@@ -273,8 +273,8 @@ func main() {
 
 	e.Register("Sum", func(c *mego.Context) {
 		// 以正整數資料型態取得傳入的兩個參數。
-		a := c.Params.GetInt(0)
-		b := c.Params.GetInt(1)
+		a := c.Param(0).GetInt()
+		b := c.Param(1).GetInt()
 
 		// 將兩個轉換成正整數的參數進行相加取得結果。
 		fmt.Printf("A + B = %d", a+b)
