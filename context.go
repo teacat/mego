@@ -2,7 +2,17 @@ package mego
 
 import (
 	"fmt"
+	"math"
+	"net"
+	"net/http"
+	"strings"
 	"time"
+
+	"github.com/vmihailenco/msgpack"
+)
+
+const (
+	abortIndex int8 = math.MaxInt8 / 2
 )
 
 // Context 是單次請求中的上下文建構體。
@@ -11,21 +21,82 @@ type Context struct {
 	Keys map[string]interface{}
 	// Errors 存放開發者自訂的錯誤，可用在中介軟體或處理函式中。
 	Errors []error
-	// Params 呈現了本次接收到的參數（如果客戶端傳送的內容是陣列而不是物件）。
-	Params Params
-	// Data 呈現了本次接收到的資料（如果客戶端傳送的內容是物件而不是一個參數陣列）。
-	Data interface{}
 	// Session 是產生此連線的客戶端階段建構體。
 	Session *Session
-
 	// isAborted 表示了這個請求是不是以已經被終止了。
 	isAborted bool
+	// ID 是本次請求的工作編號，用以讓客戶端呼叫相對應的處理函式。
+	ID int
+	// Request 是這個 WebSocket 的 HTTP 請求建構體。
+	Request *http.Request
+
+	// data 呈現了本次接收到的資料，主要是 MsgPack 內容格式。
+	data []byte
+	// index 是目前所執行的處理函式索引。
+	index int8
+	// handlers 存放此請求將會呼叫的所有處理函式。
+	handlers []HandlerFunc
+	// params 存放著已解序的參數陣列。
+	params []interface{}
 }
 
 // Error 能夠將發生的錯誤保存到單次 Session 中。
 func (c *Context) Error(err error) *Context {
 	c.Errors = append(c.Errors, err)
 	return c
+}
+
+// requestHeader 會回傳指定的 HTTP 標頭內容。
+func (c *Context) requestHeader(key string) string {
+	if values, _ := c.Request.Header[key]; len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
+// ClientIP 會盡所能地取得到最真實的客戶端 IP 位置。
+func (c *Context) ClientIP() string {
+	clientIP := c.requestHeader("X-Forwarded-For")
+	if index := strings.IndexByte(clientIP, ','); index >= 0 {
+		clientIP = clientIP[0:index]
+	}
+	clientIP = strings.TrimSpace(clientIP)
+	if len(clientIP) > 0 {
+		return clientIP
+	}
+	clientIP = strings.TrimSpace(c.requestHeader("X-Real-Ip"))
+	if len(clientIP) > 0 {
+		return clientIP
+	}
+	if ip, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr)); err == nil {
+		return ip
+	}
+	return ""
+}
+
+// Param 能夠從參數陣列中透過指定索引取得特定的參數。
+func (c *Context) Param(index int) Param {
+	// 如果已解序的參數陣列長度為空，就表示先前可能還沒解序資料成參數陣列。
+	// 因此我們需要透過 MsgPack 解序資料並存成參數陣列。
+	if len(c.params) == 0 {
+		if err := msgpack.Unmarshal(c.data, &c.params); err != nil {
+			return Param{
+				data: nil,
+				len:  len(c.params),
+			}
+		}
+	}
+	// 如果指定的索引位置大於參數陣列長度，則表示無此參數。
+	if index+1 > len(c.params) {
+		return Param{
+			data: nil,
+			len:  len(c.params),
+		}
+	}
+	return Param{
+		data: c.params[index],
+		len:  len(c.params),
+	}
 }
 
 // Copy 會複製一份 `Context` 供你在 Goroutine 中操作不會遇上資料競爭與衝突問題。
@@ -36,59 +107,70 @@ func (c *Context) Copy() *Context {
 
 // IsAborted 會回傳一個此請求是否已被終止的布林值。
 func (c *Context) IsAborted() bool {
-	return c.isAborted
+	return c.index >= abortIndex
 }
 
 // Abort 終止此次請求，避免繼續執行。
-func (c *Context) Abort() error {
-	c.isAborted = true
-	return nil
+func (c *Context) Abort() {
+	c.index = abortIndex
 }
 
 // AbortWithStatus 終止此次請求，避免繼續執行。並以指定的狀態碼回應特定客戶端。
-func (c *Context) AbortWithStatus(code int) error {
-	c.isAborted = true
-	return nil
+func (c *Context) AbortWithStatus(code int) {
+	c.Abort()
+	c.Status(code)
 }
 
 // AbortWithRespond 終止此次請求，避免繼續執行。並以指定的狀態碼、資料回應特定的客戶端。
-func (c *Context) AbortWithRespond(code int, result interface{}) error {
-	c.isAborted = true
-	return nil
+func (c *Context) AbortWithRespond(code int, result interface{}) {
+	c.Abort()
+	c.Respond(code, result)
 }
 
 // AbortWithError 結束此次請求，避免繼續執行。並以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
-func (c *Context) AbortWithError(code int, result interface{}, err error) error {
-	c.isAborted = true
-	return nil
+func (c *Context) AbortWithError(code int, result interface{}, err error) {
+	c.Abort()
+	c.RespondWithError(code, result, err)
+}
+
+func (c *Context) write(resp Response) {
+	if msg, err := msgpack.Marshal(resp); err == nil {
+		c.Session.websocket.WriteBinary(msg)
+	}
 }
 
 // Respond 會以指定的狀態碼、資料回應特定的客戶端。
-func (c *Context) Respond(code int, result interface{}) error {
-	return nil
+func (c *Context) Respond(result interface{}) {
+	c.write(Response{
+		Result: result,
+		ID:     c.ID,
+	})
 }
 
 // Status 會回傳指定的狀態碼給客戶端。
-func (c *Context) Status(code int) error {
-	return nil
+func (c *Context) Status(code int) {
+
 }
 
 // RespondWithError 會以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
-func (c *Context) RespondWithError(code int, result interface{}, err error) error {
-	return nil
+func (c *Context) RespondWithError(code int, result interface{}, err error) {
+
 }
 
 // Bind 能夠將接收到的資料映射到本地建構體。
 func (c *Context) Bind(dest interface{}) error {
-	return nil
+	return msgpack.Unmarshal(c.data, dest)
 }
 
 // MustBind 和 `Bind` 相同，差異在於若映射失敗會呼叫 `panic` 並阻止此次請求繼續執行。
 func (c *Context) MustBind(dest interface{}) error {
-	panic(err)
+	if err := msgpack.Unmarshal(c.data, dest); err != nil {
+		panic(err)
+	}
+	return nil
 }
 
-// Set 會在本次的 Session 中存放指定的鍵值組內容，可供下次相同客戶端呼叫時存取。
+// Set 會在本次上下文建構體中存放指定的鍵值組內容，可供其他處理函式存取。
 func (c *Context) Set(key string, value interface{}) {
 	c.Keys[key] = value
 }
@@ -181,7 +263,11 @@ func (c *Context) GetDuration(key string) (v time.Duration) {
 
 // Next 來呼叫下一個方法處理函式，常用於中介軟體中。
 func (c *Context) Next() {
-
+	c.index++
+	s := int8(len(c.handlers))
+	for ; c.index < s; c.index++ {
+		c.handlers[c.index](c)
+	}
 }
 
 // Emit 會向此客戶端廣播一個事件。
