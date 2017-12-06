@@ -1,13 +1,21 @@
 package mego
 
-import "time"
+import (
+	"time"
+
+	"github.com/olahol/melody"
+)
 
 // Session 是接收請求時的關聯內容，其包含了指向到特定客戶端的函式。
 type Session struct {
-	// Jar 包含了發送此請求的客戶端初始連線資料，此資料由客戶端連線時自訂。可用以取得用戶身份和相關資料。
-	Jar map[string]interface{}
-	// identifier 是此客戶端初始化時由伺服端所建立的不重複隨機名稱，供辨識匿名身份用。
+	// Keys 包含了發送此請求的客戶端初始連線資料，此資料由客戶端連線時自訂。可用以取得用戶身份和相關資料。
+	// 此欄位亦能存放伺服端設置的鍵值組。
+	Keys map[string]interface{}
+	// ID 是此客戶端初始化時由伺服端所建立的不重複隨機名稱，供辨識匿名身份用。
 	ID string
+
+	// websocket 是底層的 WebSocket 階段。
+	websocket *melody.Session
 }
 
 // Disconnect 會結束掉這個階段的連線。
@@ -23,8 +31,13 @@ func (s *Session) Copy() *Session {
 
 // Get 會取得客戶端當初建立連線時所傳入的資料特定鍵值組。
 func (s *Session) Get(name string) (v interface{}, ok bool) {
-	v, ok = s.Jar[name]
+	v, ok = s.Keys[name]
 	return
+}
+
+// Set 會在本次的 Session 中存放指定的鍵值組內容，可供下次相同客戶端呼叫時存取。
+func (s *Session) Set(key string, value interface{}) {
+	s.Keys[key] = value
 }
 
 // GetBool 能夠以布林值取得指定的參數。
