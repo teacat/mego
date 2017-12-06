@@ -3,6 +3,7 @@ package mego
 import (
 	"net/http"
 
+	uuid "github.com/satori/go.uuid"
 	"github.com/vmihailenco/msgpack"
 
 	"github.com/olahol/melody"
@@ -88,8 +89,8 @@ type Engine struct {
 	Methods map[string]*Method
 	// Option 是這個引擎的設置。
 	Option *EngineOption
-	// middlewares 是保存將會執行的全域中介軟體切片。
-	middlewares []HandlerFunc
+	// handlers 是保存將會執行的全域中介軟體切片。
+	handlers []HandlerFunc
 	// noMethod 是當呼叫不存在方式時所會呼叫的處理函式。
 	noMethod []HandlerFunc
 }
@@ -116,8 +117,8 @@ type Method struct {
 	Name string
 	// Handlers 是中介軟體與處理函式。
 	Handlers []HandlerFunc
-	// ChunkProcessor 是區塊處理介面，如果此方法不允許檔案上傳則忽略此欄位。
-	ChunkProcessor ChunkProcessor
+	// Processor 是區塊處理介面，如果此方法不允許檔案上傳則忽略此欄位。
+	Processor ChunkProcessor
 	// Option 是此方法的選項。
 	Option *MethodOption
 }
@@ -148,18 +149,105 @@ func (e *Engine) Run(port ...string) {
 		p = port[0]
 	}
 
-	m.HandleMessage(func(s *melody.Session, msg []byte) {
-		m.Broadcast(msg)
-		msgpack.Unmarshal(msg)
-	})
+	// 將接收到的所有訊息轉交給控制器。
+	m.HandleMessage(e.messageHandler)
+	//
+	m.HandleConnect(e.connectHandler)
 
 	// 開始在指定埠口監聽 HTTP 請求並交由底層伺服器處理。
 	http.ListenAndServe(p, s)
 }
 
+// connectHandler 處理連接起始的函式。
+func (e *Engine) connectHandler(s *melody.Session) {
+	// 替此階段建立一個獨立的 UUID。
+	id := uuid.NewV4().String()
+	// 在底層階段存放此階段的編號。
+	s.Set("ID", id)
+	// 將 Mego 階段放入引擎中保存。
+	e.Sessions[id] = &Session{
+		ID:        id,
+		websocket: s,
+	}
+}
+
+// messageHandler 處理所有接收到的訊息，並轉接給相對應的方法處理函式。
+func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
+	var req Request
+
+	// 將接收到的資料映射到本地請求建構體。
+	if err := msgpack.Unmarshal(msg, &req); err != nil {
+		// 如果發生錯誤則建立錯誤回應建構體，並傳送到客戶端。
+		resp, _ := msgpack.Marshal(Response{
+			Error: ResponseError{
+				Code:    StatusInvalid,
+				Message: err.Error(),
+			},
+		})
+		s.WriteBinary(resp)
+		return
+	}
+
+	// 取得這個 WebSocket 階段對應的 Mego 階段。
+	id, ok := s.Get("ID")
+	if !ok {
+		return
+	}
+	// 透過獨有編號在引擎中找出相對應的階段資料。
+	sess, ok := e.Sessions[id.(string)]
+	if !ok {
+		return
+	}
+
+	// 如果這個請求要呼叫的方法是 Mego 的初始化函式。
+	if req.Method == "MegoInitialize" {
+		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
+		var keys map[string]interface{}
+		if err := msgpack.Unmarshal(req.Params, &keys); err == nil {
+			sess.Keys = keys
+		}
+		return
+	}
+
+	// 呼叫該請求欲呼叫的方法。
+	method, ok := e.Methods[req.Method]
+	if !ok {
+		// 如果該方法不存在，就呼叫不存在方法處理函式。
+	}
+
+	// 建立一個上下文建構體。
+	ctx := &Context{
+		Session:  sess,
+		Method:   method,
+		ID:       req.ID,
+		Request:  s.Request,
+		data:     req.Params,
+		handlers: e.handlers,
+	}
+	// 將該方法的處理函式推入上下文建構體中供依序執行。
+	ctx.handlers = append(ctx.handlers, method.Handlers...)
+
+	// 如果處理函式數量大於零的話就可以開始執行了。
+	if len(ctx.handlers) > 0 {
+		ctx.handlers[0](ctx)
+	}
+}
+
+func (e *Engine) HandleRequest() {
+
+}
+
+func (e *Engine) HandleConnect() {
+
+}
+
+func (e *Engine) Handle() {
+
+}
+
 // Use 會使用傳入的中介軟體作為全域使用。
-func (e *Engine) Use(middleware ...HandlerFunc) *Engine {
-	e.middlewares = append(e.middlewares, middleware...)
+func (e *Engine) Use(handlers ...HandlerFunc) *Engine {
+	e.handlers = append(e.handlers, handlers...)
 	return e
 }
 
@@ -187,8 +275,13 @@ func (e *Engine) Event(name string) {
 }
 
 // Register 會註冊一個指定的方法，並且允許客戶端呼叫此方法觸發指定韓式。
-func (e *Engine) Register(method string, handler ...HandlerFunc) {
-	e.Methods[method] = handler
+func (e *Engine) Register(method string, handler ...HandlerFunc) *Method {
+	m := &Method{
+		Name:     method,
+		Handlers: handler,
+	}
+	e.Methods[method] = m
+	return m
 }
 
 // Emit 會帶有指定資料並向所有人廣播指定事件。
@@ -208,15 +301,13 @@ func (e *Engine) EmitFilter(event string, payload interface{}, filter func(*Sess
 }
 
 // Receive 會建立一個指定的方法，並且允許客戶端傳送檔案至此方法。
-func (e *Engine) Receive(method string, handler ...HandlerFunc) {
-	// 初始化一個內建的預設區塊處理方法。
-	var processor ChunkProcessor
-	processor = &DefaultChunkProcessor{}
-
-	e.ReceiveWith(method, processor, handler...)
+func (e *Engine) Receive(method string, handler ...HandlerFunc) *Method {
+	return e.ReceiveWith(method, &DefaultChunkProcessor{}, handler...)
 }
 
 // ReceiveWith 會透過自訂的區塊處理函式建立指定方法，讓客戶端可上傳檔案至此方法並透過自訂方式進行處理。
-func (e *Engine) ReceiveWith(method string, processor ChunkProcessor, handler ...HandlerFunc) {
-
+func (e *Engine) ReceiveWith(method string, processor ChunkProcessor, handler ...HandlerFunc) *Method {
+	m := e.Register(method, handler...)
+	m.Processor = processor
+	return m
 }
