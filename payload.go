@@ -5,7 +5,7 @@ type Request struct {
 	// Method 是欲呼叫的方法名稱。
 	Method string
 	// Params 是資料或參數。
-	Params interface{}
+	Params []byte
 	// ID 為本次請求編號，若無則為單次通知廣播不需回應。
 	ID int
 }
@@ -15,9 +15,19 @@ type Response struct {
 	// Result 是正常回應時的資料酬載。
 	Result interface{}
 	// Error 是錯誤回應時的資料酬載，與 Result 兩者擇其一，不會同時使用。
-	Error interface{}
+	Error ResponseError
 	// ID 是當時發送此請求的編號，用以讓客戶端比對是哪個請求所造成的回應。
 	ID int
+}
+
+// ResponseError 是回應錯誤資料建構體。
+type ResponseError struct {
+	// Code 是錯誤代號。
+	Code int
+	// Message 是人類可讀的簡略錯誤訊息。
+	Message string
+	// Data 是本次錯誤的詳細資料。
+	Data interface{}
 }
 
 // Chunk 是一個檔案區塊。
