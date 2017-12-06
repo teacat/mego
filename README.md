@@ -659,11 +659,17 @@ Mego 已附帶了 JavaScript 客戶端，可供你在 Node.js 或瀏覽器中完
 
 ## 連線
 
-透過 `MegoClient` 類別建立一個到伺服器的 Mego 連線。
+透過 `MegoClient` 類別建立一個到伺服器的 Mego 連線。在另一個參數可夾帶客戶端資料，這令你不需要每次發送資料都須額外參夾使用者資料。
 
 ```js
 // 建立一個新的 Mego 客戶端，並經由 WebSocket 溝通。
 ws = new MegoClient('ws://localhost/')
+
+// 第二個參數可以擺放資料供你在伺服器端更方便處理使用者身份。
+ws = new MegoClient('ws://localhost/', {
+	token  : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+	version: '1.0'
+})
 ```
 
 ### 重啟連線
