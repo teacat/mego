@@ -95,17 +95,6 @@ Mego 是基於 [`net/http`](https://golang.org/pkg/net/http/) 和 [`olahol/melod
   * [錯誤處理](#錯誤處理)
   * [結束](#結束)
 * [客戶端](#客戶端)
-  * [連線](#連線)
-  	* [重啟連線](#重啟連線)
-  	* [斷開連線](#斷開連線)
-  * [呼叫伺服端](#呼叫伺服端)
-  	* [透過 ES7 的 Async、Await](#透過-es7-的-async、await)
-	* [錯誤處理](#錯誤處理)
-  * [事件監聽](#事件監聽)
-  	* [訂閱自訂事件](#訂閱自訂事件)
-  	* [取消訂閱](#取消訂閱)
-  * [檔案上傳](#檔案上傳)
-  * [通知](#通知)
 * [狀態碼](#狀態碼)
 * [API 文件撰寫風格](#api-文件撰寫風格)
 
@@ -428,7 +417,7 @@ func main() {
 	e := mego.Default()
 
 	mw := func(c *mego.Context) {
-		if c.ID != "jn3Dl74eX" {
+		if c.Session.ID != "jn3Dl74eX" {
 			// 直接終止此請求的繼續，並停止呼叫接下來的中介軟體與處理函式。
 			c.Abort()
 
@@ -682,7 +671,7 @@ e.Close()
 
 Mego 有附帶數個官方客戶端。
 
-* [JavaScript](./client/README.md)
+* [JavaScript](./client/js/README.md)
 * [Golang](./client/README.md)
 
 # 狀態碼
