@@ -29,7 +29,7 @@ type Context struct {
 	ID int
 	// Request 是這個 WebSocket 的 HTTP 請求建構體。
 	Request *http.Request
-	//
+	// Method 是目前正執行的方法建構體。
 	Method *Method
 
 	// data 呈現了本次接收到的資料，主要是 MsgPack 內容格式。
