@@ -58,7 +58,7 @@ class MegoClient
     unsubscribe: (event) =>
 
     # 上傳指定檔案。
-    file: (method, file) =>
+    upload: (method, file) =>
 
     # 對遠端伺服器廣播，簡單說就是無資料無回應的方法呼叫。
     notify: (method) =>
