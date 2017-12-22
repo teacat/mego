@@ -1,5 +1,5 @@
 // 初始化一個 Mego 連線。
-ws = new Mego('ws://localhost')
+ws = new MegoClient('ws://localhost')
 
 // 監聽 WebSocket 開始運作時的事件。
 ws.on('open', async () => {
@@ -12,7 +12,7 @@ ws.on('open', async () => {
     })
 
     // 呼叫遠端 `sum` 進行 1 跟 2 的加總計算。
-    await response = ws.call('sum', [1, 2])
+    response = await ws.call('sum', [1, 2])
 
     // 當完成時顯示加總後的答案。
     console.log('計算完畢，答案是：' + response.result)
