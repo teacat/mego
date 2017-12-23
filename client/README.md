@@ -72,28 +72,19 @@ var resp Response
 // 呼叫遠端的 `Sum` 方法，並傳入兩個參數。
 err := ws.Call("Sum").
 	Send([]int{5, 3}).
-    End()
-if err != nil {
-    panic(err)
-}
+	End()
 
 // 呼叫遠端的 `Sum` 方法，並傳入一個物件。
 err = ws.Call("CreateUser").
 	Send(client.H{
 		"NumberA": 5,
 	}).
-    End()
-if err != nil {
-    panic(err)
-}
+	End()
 
 // 呼叫遠端的 `Sum` 方法，並傳入一個 JSON 內容。
 err = ws.Call("CreateUser").
 	Send(`{"NumberA": 5}`).
-    End()
-if err != nil {
-    panic(err)
-}
+	End()
 ```
 
 ### 送出資料
@@ -138,7 +129,7 @@ err := ws.Call("Upload").
 	}).
 	// 且夾帶名為 `photo.png` 的檔案。
 	SendFile("./photo.png").
-    End()
+	End()
 ```
 
 ### 透過 *os.File
@@ -157,7 +148,7 @@ err := ws.Call("Upload").
 	}).
 	// 以 *os.File 方式夾帶名為 `video.mp4` 的檔案。
 	SendFile(file).
-    End()
+	End()
 ```
 
 ### 透過二進制
@@ -177,7 +168,7 @@ err := ws.Call("Upload").
 	}).
 	// 以二進制方式夾帶並上傳 `textfile.txt` 的內容。
 	SendFile(bytes).
-    End()
+	End()
 ```
 
 ### 自訂欄位名稱
@@ -187,13 +178,13 @@ err := ws.Call("Upload").
 ```go
 // 呼叫遠端的 `Upload` 方法。
 err := ws.Call("Upload").
-    // 這個檔案欄位會被命名為 `File1`。
+	// 這個檔案欄位會被命名為 `File1`。
 	SendFile(file).
-    // 這個檔案欄位會被命名為 `TextFile`。
-    SendFile(bytes, "TextFile").
-    // 這個檔案欄位會被命名為 `File2`。
-    SendFile(anotherFile).
-    End()
+	// 這個檔案欄位會被命名為 `TextFile`。
+	SendFile(bytes, "TextFile").
+	// 這個檔案欄位會被命名為 `File2`。
+	SendFile(anotherFile).
+	End()
 ```
 
 ### 區塊上傳
@@ -205,13 +196,13 @@ err := ws.Call("Upload").
 ```go
 // 呼叫遠端的 `Upload` 方法。
 err := ws.Call("Upload").
-    // 並且傳遞下列物件資料。
+	// 並且傳遞下列物件資料。
 	Send(client.H{
 		"AlbumID": 30,
 	}).
-    // 這個檔案欄位會被命名為 `File1`。
+	// 這個檔案欄位會被命名為 `File1`。
 	SendFileChunks("./largeFile.zip").
-    End()
+	End()
 ```
 
 ## 事件監聽
@@ -220,7 +211,7 @@ err := ws.Call("Upload").
 
 ```go
 ws.On("open", func() {
-    fmt.Println("成功連線！")
+	fmt.Println("成功連線！")
 })
 ```
 
@@ -232,12 +223,12 @@ ws.On("open", func() {
 // 先告訴伺服器我們要訂閱 `NewMessage` 事件。
 err := ws.Subscribe("NewMessage")
 if err != nil {
-    panic(err)
+	panic(err)
 }
 
 // 當接收到 `NewMessage` 事件時所執行的處理函式。
 ws.On("NewMessage", func() {
-    fmt.Println("收到 newMessage 事件！")
+	fmt.Println("收到 newMessage 事件！")
 })
 ```
 
@@ -247,9 +238,6 @@ ws.On("NewMessage", func() {
 
 ```go
 err := ws.Unsubscribe("NewMessage")
-if err != nil {
-    panic(err)
-}
 ```
 
 ## 通知
