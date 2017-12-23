@@ -75,14 +75,14 @@ err := ws.Call("Sum").
 	End()
 
 // 呼叫遠端的 `Sum` 方法，並傳入一個物件。
-err = ws.Call("CreateUser").
+err = ws.Call("Sum").
 	Send(client.H{
 		"NumberA": 5,
 	}).
 	End()
 
 // 呼叫遠端的 `Sum` 方法，並傳入一個 JSON 內容。
-err = ws.Call("CreateUser").
+err = ws.Call("Sum").
 	Send(`{"NumberA": 5}`).
 	End()
 ```
