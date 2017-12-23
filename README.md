@@ -137,10 +137,10 @@ func main() {
 ###### JavaScript
 
 ```javascript
-ws = new Mego('ws://localhost/')
+ws = new MegoClient('ws://localhost/')
 
 ws.on('open', () => {
-    ws.call('getUser').then(({result}) => {
+    ws.call('getUser').end().then(({result}) => {
         console.log(result.username) // 輸出：YamiOdymel
     })
 })
@@ -166,9 +166,6 @@ e := mego.New()
 func main() {
 	e := mego.Default()
 
-	// 建立一個 `UpdateApp` 才能供客戶端監聽。
-	e.Event("UpdateApp")
-
 	// 廣播一個 `UpdateApp` 事件給所有監聽的客戶端，觸發其事件監聽函式。
 	e.Emit("UpdateApp", nil)
 
@@ -189,9 +186,6 @@ func main() {
 func main() {
 	e := mego.Default()
 
-	// 建立一個 `UpdateApp` 才能供客戶端監聽。
-	e.Event("UpdateApp")
-
 	// 對指定的 [0] 與 [1] 客戶端廣播 `UpdateApp` 事件，其他客戶端不會接收到此事件。
 	e.EmitMultiple("UpdateApp", nil, []*mego.Session{
 		e.Sessions[0],
@@ -209,9 +203,6 @@ func main() {
 ```go
 func main() {
 	e := mego.Default()
-
-	// 建立一個 `UpdateApp` 才能供客戶端監聽。
-	e.Event("UpdateApp")
 
 	// 過濾所有客戶端，僅有 ID 為 `0k3LbEjL` 的才能夠接收到 UpdateApp 事件。
 	e.EmitFilter("UpdateApp", nil, func(s *mego.Session) bool {
@@ -331,9 +322,6 @@ func main() {
 ```go
 func main() {
 	e := mego.Default()
-
-	// 建立一個 `UpdateApp` 才能供客戶端監聽。
-	e.Event("UpdateApp")
 
 	e.Register("CreateUser", func(c *mego.Context) {
 		// 廣播 UpdateApp 事件給產生此請求的客戶端。
