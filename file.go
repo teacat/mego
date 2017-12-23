@@ -63,3 +63,10 @@ func (p *DefaultChunkProcessor) Process(chunk *Chunk) error {
 func (p *DefaultChunkProcessor) Done(last *Chunk) *File {
 	return nil
 }
+
+// Chunker 會在方法中處理接收到的區塊資料並組成檔案。
+func Chunker() HandlerFunc {
+	return func(c *Context) {
+		c.Next()
+	}
+}
