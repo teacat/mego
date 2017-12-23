@@ -40,20 +40,14 @@ type Context struct {
 	handlers []HandlerFunc
 	// params 存放著已解序的參數陣列。
 	params []interface{}
+	// engine 是主要引擎。
+	engine *Engine
 }
 
 // Error 能夠將發生的錯誤保存到單次 Session 中。
 func (c *Context) Error(err error) *Context {
 	c.Errors = append(c.Errors, err)
 	return c
-}
-
-// requestHeader 會回傳指定的 HTTP 標頭內容。
-func (c *Context) requestHeader(key string) string {
-	if values, _ := c.Request.Header[key]; len(values) > 0 {
-		return values[0]
-	}
-	return ""
 }
 
 // ClientIP 會盡所能地取得到最真實的客戶端 IP 位置。
@@ -127,12 +121,6 @@ func (c *Context) AbortWithRespond(result interface{}) {
 func (c *Context) AbortWithError(code int, data interface{}, err error) {
 	c.Abort()
 	c.RespondWithError(code, data, err)
-}
-
-func (c *Context) write(resp Response) {
-	if msg, err := msgpack.Marshal(resp); err == nil {
-		c.Session.websocket.WriteBinary(msg)
-	}
 }
 
 // Respond 會以指定的狀態碼、資料回應特定的客戶端。
@@ -269,11 +257,39 @@ func (c *Context) Next() {
 }
 
 // Emit 會向此客戶端廣播一個事件。
-func (c *Context) Emit(event string, payload interface{}) error {
-	return nil
+func (c *Context) Emit(event string, result interface{}) {
+	c.write(Response{
+		Event:  event,
+		Result: result,
+	})
 }
 
 // EmitOthers 會將帶有指定資料的事件向自己以外的所有人廣播。
-func (c *Context) EmitOthers(event string, payload interface{}) error {
-	return nil
+func (c *Context) EmitOthers(event string, result interface{}) {
+	c.writeOthers(Response{
+		Event:  event,
+		Result: result,
+	})
+}
+
+// requestHeader 會回傳指定的 HTTP 標頭內容。
+func (c *Context) requestHeader(key string) string {
+	if values, _ := c.Request.Header[key]; len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
+// write 會將傳入的回應轉譯成 MessagePack 並且寫入 WebSocket。
+func (c *Context) write(resp Response) {
+	if msg, err := msgpack.Marshal(resp); err == nil {
+		c.Session.websocket.WriteBinary(msg)
+	}
+}
+
+// write 會將傳入的回應轉譯成 MessagePack 並且寫入 WebSocket。
+func (c *Context) writeOthers(resp Response) {
+	if msg, err := msgpack.Marshal(resp); err == nil {
+		c.engine.websocket.BroadcastOthers(msg, c.Session.websocket)
+	}
 }
