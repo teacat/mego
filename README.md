@@ -122,7 +122,7 @@ func main() {
 	// 定義一個 GetUser 方法供客戶端呼叫。
 	e.Register("GetUser", func(c *mego.Context) {
 		// 回應 `{"username": "YamiOdymel"}` 資料。
-		c.Respond(mego.StatusOK, mego.H{
+		c.Respond(mego.H{
 			"username": "YamiOdymel",
 		})
 	})
@@ -299,7 +299,7 @@ func main() {
 
 ## 處理請求與回應
 
-透過 `Respond` 正常回應一個客戶端的請求。以 `Status` 可以僅傳送狀態碼並省去多餘的資料。而 `RespondWithError` 可以回傳一個錯誤發生的詳細資料用已告知客戶端發生了錯誤。
+透過 `Respond` 正常回應一個客戶端的請求。而 `RespondWithError` 可以回傳一個錯誤發生的詳細資料用已告知客戶端發生了錯誤。
 
 ```go
 func main() {
@@ -307,12 +307,9 @@ func main() {
 
 	e.Register("CreateUser", func(c *mego.Context) {
 		// 針對此請求，回傳一個指定的狀態碼與資料。
-		c.Respond(mego.StatusOK, mego.H{
+		c.Respond(mego.H{
 			"message": "成功建立使用者！",
 		})
-
-		// 針對此請求，僅回傳一個狀態碼並省去多餘的資料內容。
-		c.Status(mego.StatusOK)
 
 		// 針對此請求，回傳一個錯誤相關資料與狀態碼，還有錯誤本身。
 		c.RespondWithError(mego.StatusError, mego.H{
@@ -408,7 +405,7 @@ func main() {
 
 ### 終止請求
 
-如果連線有異常不希望繼續呼叫下一個中介軟體或處理函式，則需要透過 `Abort` 終止此請求。透過 `AbortWithStatus` 可以在終止的時候回傳一個狀態碼給客戶端。以 `AbortWithRespond` 可以回傳正常的資料與狀態碼。
+如果連線有異常不希望繼續呼叫下一個中介軟體或處理函式，則需要透過 `Abort` 終止此請求。以 `AbortWithRespond` 可以回傳正常的資料與狀態碼。
 
 而 `AbortWithError` 則會在終止的時候回傳狀態碼與錯誤的詳細資料。
 
@@ -421,11 +418,8 @@ func main() {
 			// 直接終止此請求的繼續，並停止呼叫接下來的中介軟體與處理函式。
 			c.Abort()
 
-			// 終止此請求並回傳一個狀態碼。
-			c.AbortWithStatus(mego.StatusNoPermission)
-
-			// 終止此請求並且回傳狀態碼與資料。客戶端並不會知道是錯誤發生，仍會依一般回應處理。
-			c.AbortWithRespond(mego.StatusOK, mego.H{
+			// 終止此請求並且回傳資料。客戶端並不會知道是錯誤發生，仍會依一般回應處理。
+			c.AbortWithRespond(mego.H{
 				"message": "嗨！雖然你不是 jn3Dl74eX 但我們還是很歡迎你！",
 			})
 
