@@ -565,19 +565,77 @@ func main() {
 
 ## 檔案上傳處理
 
-Mego 能夠自動幫你處理透過 WebSocket 所上傳的檔案。透過 `File` 建構體可以取得客戶端上傳的檔案資料。
+Mego 能夠自動幫你處理透過 WebSocket 所上傳的檔案。
+
+### 單一檔案
+
+客戶端可以上傳多個且獨立的檔案。透過 `GetFile` 取得單一個檔案，需要傳遞一個檔案欄位的名稱至此函式。當沒有指定名稱時以第一個檔案為主，如果方法永遠只接收一個檔案，那麼就可以省略名稱。
+
+如果檔案是必要的，那麼透過 `MustGetFile` 可以在沒有接收到檔案的情況下自動呼叫 `panic` 終止此請求。
 
 ```go
 func main() {
 	e := mego.Default()
 
-	e.Recevie("Photo", func(c *mego.Context) {
-		c.Respond(mego.StatusOK, mego.H{
-			"filename":  c.File.Name,      // 檔案原始名稱。
-			"size":      c.File.Size,      // 檔案大小（位元組）。
-			"extension": c.File.Extension, // 檔案副檔名（無符號）。
-			"path":      c.File.Path,      // 檔案本地路徑。
-		})
+	e.Register("UploadPhoto", func(c *mego.Context) {
+		// 透過 `GetFile` 取得客戶端上傳的 `Photo` 檔案。
+		if file, err := c.GetFile("Photo"); err == nil {
+			c.Respond(mego.H{
+				"filename":  file.Name,      // 檔案原始名稱。
+				"size":      file.Size,      // 檔案大小（位元組）。
+				"extension": file.Extension, // 檔案副檔名（無符號）。
+				"path":      file.Path,      // 檔案本地路徑。
+			})
+		}
+	})
+
+	e.Run()
+}
+```
+
+### 多個檔案
+
+一個檔案欄位可以擺放多個檔案，這會使其成為檔案陣列。透過 `GetFiles` 以切片的方式取得指定檔案欄位的多個檔案。同樣地，當這個函式沒有傳入指定檔案欄位名稱時，以第一個檔案欄位為主。
+
+這個函式會回傳一個切片方便進行遍歷。如果有個檔案欄位是必須的，透過 `MustGetFiles` 來在沒有接收到檔案的情況下自動呼叫 `panic` 中止請求。
+
+```go
+func main() {
+	e := mego.Default()
+
+	e.Register("UploadPhoto", func(c *mego.Context) {
+		// 透過 `GetFiles` 取得客戶端上傳的多個檔案。
+		if files, err := c.GetFiles("Photos"); err == nil {
+			for _, file := range files {
+				fmt.Println(file.Name) // 檔案原始名稱。
+			}
+		}
+	})
+
+	e.Run()
+}
+```
+
+### 區塊上傳
+
+如果客戶端中的檔案過大，區塊上傳便是最好的方法。透過 `Chunker()` 在方法中初始化一個區塊處理中介軟體。這個中介軟體能協助你將 Mego 區塊轉換成一個完整的檔案。
+
+使用這個中介軟體後，方法只會接收到一個完整檔案與起初傳遞的資料。透過 `GetFile` 直接取得完整的檔案。
+
+```go
+func main() {
+	e := mego.Default()
+
+	e.Register("UploadPhoto", mego.Chunker(), func(c *mego.Context) {
+		var u User
+
+		// 取得已從區塊組成的完整檔案。
+		file := c.MustGetFile()
+		fmt.Println(file.Name)
+
+		// 你仍可以將檔案夾帶的資料映射到本地建構體。
+		c.MustBind(&u)
+		fmt.Println(u.Username)
 	})
 
 	e.Run()
