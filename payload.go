@@ -12,6 +12,8 @@ type Request struct {
 
 // Response 呈現了 Mego 將會回應給客戶端的內容。
 type Response struct {
+	// Event 是欲呼叫的客戶端事件名稱。
+	Event string
 	// Result 是正常回應時的資料酬載。
 	Result interface{}
 	// Error 是錯誤回應時的資料酬載，與 Result 兩者擇其一，不會同時使用。
