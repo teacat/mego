@@ -93,6 +93,8 @@ type Engine struct {
 	handlers []HandlerFunc
 	// noMethod 是當呼叫不存在方式時所會呼叫的處理函式。
 	noMethod []HandlerFunc
+	//
+	websocket *melody.Melody
 }
 
 // EngineOption 是引擎的選項設置。
@@ -142,6 +144,7 @@ func (e *Engine) Run(port ...string) {
 	s := &server{
 		websocket: m,
 	}
+	e.websocket = m
 
 	// 設定預設埠口。
 	p := ":5000"
@@ -209,6 +212,22 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		return
 	}
 
+	//
+	switch req.Method {
+	//
+	case "MegoInitialize":
+		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
+		var keys map[string]interface{}
+		if err := msgpack.Unmarshal(req.Params, &keys); err == nil {
+			sess.Keys = keys
+		}
+		return
+
+	//
+	case "MegoSubscribe":
+		//
+	}
+
 	// 呼叫該請求欲呼叫的方法。
 	method, ok := e.Methods[req.Method]
 	if !ok {
@@ -233,16 +252,20 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 	}
 }
 
-func (e *Engine) HandleRequest() {
-
+func (e *Engine) HandleRequest() *Engine {
+	return e
 }
 
-func (e *Engine) HandleConnect() {
-
+func (e *Engine) HandleConnect() *Engine {
+	return e
 }
 
-func (e *Engine) Handle() {
+func (e *Engine) Handle() *Engine {
+	return e
+}
 
+func (e *Engine) HandleSubscribe(event string, handler ...HandlerFunc) *Engine {
+	return e
 }
 
 // Use 會使用傳入的中介軟體作為全域使用。
@@ -258,6 +281,7 @@ func (e *Engine) Len() int {
 
 // Close 會結束此引擎的服務。
 func (e *Engine) Close() error {
+	e.websocket.Close()
 	return nil
 }
 
