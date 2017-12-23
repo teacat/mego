@@ -11,9 +11,8 @@ Mego 已附帶了 JavaScript 客戶端，可供你在前端與伺服端的 Mego 
     * [設置酬載](#設置酬載)
     * [送出資料](#送出資料)
 * [檔案上傳](#檔案上傳)
-    * [透過檔案路徑](#透過檔案路徑)
-    * [透過 *os.File](#透過-*os.File)
-    * [透過二進制](#透過二進制)
+    * [透過檔案欄位、File、Blob](#透過檔案欄位、File、Blob)
+    * [透過 FileReader、ArrayBuffer](#透過-FileReader、ArrayBuffer)
     * [自訂欄位名稱](#自訂欄位名稱)
     * [區塊上傳](#區塊上傳)
 * [事件監聽](#事件監聽)
@@ -26,16 +25,16 @@ Mego 已附帶了 JavaScript 客戶端，可供你在前端與伺服端的 Mego 
 透過 `MegoClient` 類別建立一個到伺服器的 Mego 連線。在另一個參數可夾帶客戶端資料，這令你不需要每次發送資料都須額外參夾使用者資料。
 
 ```js
-// 建立一個新的 Mego 客戶端，並經由 WebSocket 溝通。
-var ws = new MegoClient("ws://localhost/")
-// 透過 `set` 保存本客戶端的資料至遠端，
-// 如此一來就不需要每次都發送相同重複資料。
-ws.set({
-	"token"  : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
-	"version": "1.0"
-})
-
 try {
+	// 建立一個新的 Mego 客戶端，並經由 WebSocket 溝通。
+	var ws = new MegoClient("ws://localhost/")
+	// 透過 `set` 保存本客戶端的資料至遠端，
+	// 如此一來就不需要每次都發送相同重複資料。
+	ws.set({
+		"token"  : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+		"version": "1.0"
+	})
+
 	ws.connect()
 } catch (err) {
 	console.log(err)
@@ -95,9 +94,8 @@ result = await ws.call("sum")
 
 ```js
 try {
-    var result
-        // 呼叫遠端的 `sum` 方法，並傳入兩個參數。
-    result = await ws.call("sum")
+    // 呼叫遠端的 `sum` 方法，並傳入兩個參數。
+    var result = await ws.call("sum")
         .send([5, 3])
         .end()
 } catch (err) {
@@ -171,10 +169,10 @@ var result = await ws.call("upload")
 // 呼叫遠端的 `upload` 方法。
 var result = await ws.call("upload")
     // 這個檔案欄位會被命名為 `File1`。
-	.sendFile(file)
-	// 這個檔案欄位會被命名為 `TextFile`。
-	.sendFile(buffer, "textFile")
-	// 這個檔案欄位會被命名為 `File2`。
+    .sendFile(file)
+    // 這個檔案欄位會被命名為 `TextFile`。
+    .sendFile(buffer, "textFile")
+    // 這個檔案欄位會被命名為 `File2`。
     .sendFile(anotherFile)
     .end()
 ```
