@@ -737,7 +737,7 @@ Mego 有附帶數個官方客戶端。
 
 # API 文件撰寫風格
 
-由於不受傳統 RESTful 風格的拘束，你可以很輕易地就透過 Markdown 格式規劃出 Mego 的 API 文件。我們有現成的[使用者 API 範例](./examples/doc/User%20API.md)可供參考。
+由於不受傳統 RESTful 風格的拘束，你可以很輕易地就透過 Markdown 格式規劃出 Mego 的 API 文件。我們有現成的[使用者 API 範例](./docs/Example%20API%20Docs.md)可供參考。
 
 ```markdown
 # 會員系統
