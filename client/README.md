@@ -16,10 +16,10 @@ Mego 已附帶了 Golang 客戶端，可供你在後端與伺服端的 Mego 進�
     * [透過二進制](#透過二進制)
     * [自訂欄位名稱](#自訂欄位名稱)
     * [區塊上傳](#區塊上傳)
+* [錯誤處理](#錯誤處理)
 * [事件監聽](#事件監聽)
     * [訂閱自訂事件](#訂閱自訂事件)
     * [取消訂閱](#取消訂閱)
-* [通知](#通知)
 
 ## 連線
 
@@ -27,7 +27,7 @@ Mego 已附帶了 Golang 客戶端，可供你在後端與伺服端的 Mego 進�
 
 ```go
 // 建立一個新的 Mego 客戶端，並經由 WebSocket 溝通。
-ws := client.New("ws://localhost/").
+ws := client.NewClient("ws://localhost/").
 	// 透過 `Set` 保存本客戶端的資料至遠端，
 	// 如此一來就不需要每次都發送相同重複資料。
 	Set(client.H{
@@ -205,46 +205,49 @@ err := ws.Call("Upload").
 	End()
 ```
 
-## 事件監聽
-
-基本的內建事件有 `open`（連線）, `close`（連線關閉）, `reopen`（重新連線）, `message`（收到資料）, `error`（錯誤、斷線）可供監聽。
+## 錯誤處理
 
 ```go
-ws.On("open", func() {
+err := ws.Call("Sum").
+	Send([]int{5, 3}).
+	End()
+if err != nil {
+
+}
+```
+
+## 事件監聽
+
+基本的內建事件有 `Open`（連線）, `Close`（連線關閉）, `Reopen`（重新連線）, `Message`（收到資料）, `Error`（錯誤、斷線）可供監聽。
+
+```go
+ws.On("Open", func() {
 	fmt.Println("成功連線！")
 })
 ```
 
 ### 訂閱自訂事件
 
-你也能以 `Subscribe` 訂閱並透過 `On` 來監聽伺服器的自訂事件。用在聊天室檢查新訊息是最方便不過的了。
+透過 `Subscribe` 告訴遠端伺服器我們要訂閱自訂事件與指定頻道，並透過 `On` 處理接收到的事件。一個事件可以有很多個頻道，類似一個「新訊息」事件來自很多個聊天室。
 
 ```go
-// 先告訴伺服器我們要訂閱 `NewMessage` 事件。
-err := ws.Subscribe("NewMessage")
+// 先告訴伺服器我們要訂閱 `NewMessage` 事件，且表明這是頻道 `Chatroom1`。
+// 指定頻道可以避免接收到其他人的事件。
+err := ws.Subscribe("NewMessage", "Chatroom1")
 if err != nil {
 	panic(err)
 }
 
 // 當接收到 `NewMessage` 事件時所執行的處理函式。
-ws.On("NewMessage", func() {
+ws.On("NewMessage", func(e *client.Event) {
 	fmt.Println("收到 newMessage 事件！")
 })
 ```
 
 ### 取消訂閱
 
-透過 `Unsubscribe` 將自己從遠端伺服器上的指定事件監聽列表中移除。
+透過 `Unsubscribe` 將自己從遠端伺服器上的指定事件監聽列表中移除，這將會停止接收到之後的事件。
 
 ```go
-err := ws.Unsubscribe("NewMessage")
-```
-
-## 通知
-
-透過 `Notify` 來向伺服器廣播一個通知，且不要求回應與夾帶資料。
-
-```go
-// 伺服器會執行名為 `NewUser` 的方法。
-ws.Notify("NewUser")
+err := ws.Unsubscribe("NewMessage", "Chatroom1")
 ```

@@ -18,7 +18,6 @@ Mego 已附帶了 JavaScript 客戶端，可供你在前端與伺服端的 Mego 
 * [事件監聽](#事件監聽)
     * [訂閱自訂事件](#訂閱自訂事件)
     * [取消訂閱](#取消訂閱)
-* [通知](#通知)
 
 ## 連線
 
@@ -207,35 +206,27 @@ ws.on("open", () => {
 
 ### 訂閱自訂事件
 
-你也能以 `subscribe` 訂閱並透過 `on` 來監聽伺服器的自訂事件。用在聊天室檢查新訊息是最方便不過的了。
+透過 `subscribe` 告訴遠端伺服器我們要訂閱自訂事件與指定頻道，並透過 `on` 處理接收到的事件。一個事件可以有很多個頻道，類似一個「新訊息」事件來自很多個聊天室。
 
 ```js
-// 先告訴伺服器我們要訂閱 `NewMessage` 事件。
-ws.subscribe("newMessage").catch((err) => {
+// 先告訴伺服器我們要訂閱 `newMessage` 事件，且表明這是頻道 `chatroom1`。
+// 指定頻道可以避免接收到其他人的事件。
+ws.subscribe("newMessage", "chatroom1").catch((err) => {
 	console.log(err)
 })
 
 // 當接收到 `newMessage` 事件時所執行的處理函式。
-ws.on("newMessage", () => {
+ws.on("newMessage", (e) => {
 	console.log("收到 newMessage 事件！")
 })
 ```
 
 ### 取消訂閱
 
-透過 `unsubscribe` 將自己從遠端伺服器上的指定事件監聽列表中移除。
+透過 `unsubscribe` 將自己從遠端伺服器上的指定事件監聽列表中移除，這將會停止接收到之後的事件。
 
 ```js
-ws.unsubscrible("newMessage").catch((err) => {
+ws.unsubscrible("newMessage", "chatroom1").catch((err) => {
 	console.log(err)
 })
-```
-
-## 通知
-
-透過 `notify` 來向伺服器廣播一個通知，且不要求回應與夾帶資料。
-
-```js
-// 伺服器會執行名為 `newUser` 的方法。
-ws.notify("newUser")
 ```

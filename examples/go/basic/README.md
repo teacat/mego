@@ -5,24 +5,12 @@
 ## 範例
 
 ```bash
-# 啟動生產者，這會向 NSQ 傳送一個 Protobuf 資料到 `msg` 主題。
-go run ./producer/main.go
-# 啟動消費者，這會向 NSQ 註冊一個基於 `msg` 主題的 `user` 頻道，
-# 所以就能接收 `msg` 主題的訊息，接著透過 Protobuf 解碼。
-go run ./consumer/main.go
+# 啟動 Mego 伺服器。
+go run ./server/main.go
+# 啟動客戶端，傳送資料至伺服器並呼叫 `Sum` 方法且取得回應。
+go run ./client/main.go
 ```
 
 ```bash
-2017/03/14 04:17:09 INF    2 [msg/user] querying nsqlookupd http://127.0.0.1:4161/lookup?topic=msg
-2017/03/14 04:17:09 INF    2 [msg/user] (127.0.0.1:4150) connecting to nsqd
-2017/03/14 04:17:14 接收到了一個 Protobuf 資料，而 Content 是：你好，世界！
-```
-
-## Protobuf
-
-```proto
-// Msg 呈現了一個訊息資料。
-message Msg {
-    string content = 1;
-}
+2017/12/25 04:17:14 從遠端 Mego 伺服器計算的 5 + 3 結果為：8
 ```
