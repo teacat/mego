@@ -1,55 +1,89 @@
 package client
 
-// Client 呈現了一個客戶端。
+func NewClient(url string) *Client {
+	return &Client{
+		URL: url,
+	}
+}
+
 type Client struct {
+	URL string
 }
 
-// New 會初始化一個客戶端。
-func New() *Client {
-	return &Client{}
+func (c *Client) Call(method string) *Request {
+	return &Request{
+		Method: method,
+	}
 }
 
-// Connect 會連線到遠端伺服器。
-func (c *Client) Connect() {
-
-}
-
-// Reconnect 可以重新連線。
-func (c *Client) Reconnect() {
+func (c *Client) Set(data interface{}) *Client {
 
 }
 
-// Close 會關閉連線。
-func (c *Client) Close() {
+func (c *Client) Connect() error {
 
 }
 
-// Call 會傳送指定資料並呼叫遠端的方法。當資料是一個陣列時，會被當作參數看待。
-func (c *Client) Call() {
+func (c *Client) Reconnect() error {
 
 }
 
-// On 可以監聽指定事件。
-func (c *Client) On() {
+func (c *Client) Close() error {
 
 }
 
-// Subscribe 會向伺服器訂閱指定事件，如此一來才能夠監聽自訂事件。
-func (c *Client) Subscribe() {
+func (c *Client) Subscribe(event string, channel string) error {
 
 }
 
-// Unsubscribe 會向伺服器取消訂與一個事件。
-func (c *Client) Unsubscribe() {
+func (c *Client) Unsubscribe(event string, channel string) error {
 
 }
 
-// Upload 會上傳一個檔案到遠端伺服器。
-func (c *Client) Upload() {
+func (c *Client) On(event string, handler func(*Event)) *Client {
 
 }
 
-// Notify 來向伺服器廣播一個通知，且不要求回應與夾帶資料。
-func (c *Client) Notify() {
+type Error struct {
+}
 
+func (e *Error) Error() string {
+
+}
+
+type Event struct {
+}
+
+func (e *Event) Bind(dest interface{}) error {
+	return nil
+}
+
+type File struct {
+}
+
+type Request struct {
+	Method string
+	Params interface{}
+	Files  []*File
+	ID     int
+}
+
+func (r *Request) Send() {
+
+}
+
+func (r *Request) SendFile() {
+
+}
+
+func (r *Request) SendFileChunks() {
+
+}
+
+func (r *Request) End() error {
+	return nil
+}
+
+func (r *Request) EndStruct(dest interface{}) error {
+	return nil
 }
