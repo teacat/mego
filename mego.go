@@ -69,6 +69,15 @@ func New() *Engine {
 	}
 }
 
+// Default 會建立一個帶有 `Recovery` 和 `Logger` 中介軟體的 Mego 引擎。
+func Default() *Engine {
+	return &Engine{
+		Sessions: make(map[string]*Session),
+		Events:   make(map[string]*Event),
+		Methods:  make(map[string]*Method),
+	}
+}
+
 // server 是基礎伺服器用來與基本 HTTP 連線進行互動。
 type server struct {
 	websocket *melody.Melody
