@@ -29,7 +29,7 @@ func (p *Param) GetBool() (v bool) {
 }
 
 // GetFloat64 能夠以浮點數取得指定的參數。
-func (p *Param) GetFloat64(index int) (v float64) {
+func (p *Param) GetFloat64() (v float64) {
 	if val, ok := p.data.(float64); ok {
 		v = val
 	}
@@ -37,7 +37,7 @@ func (p *Param) GetFloat64(index int) (v float64) {
 }
 
 // GetInt 能夠以正整數取得指定的參數。
-func (p *Param) GetInt(index int) (v int) {
+func (p *Param) GetInt() (v int) {
 	if val, ok := p.data.(int); ok {
 		v = val
 	}
@@ -45,7 +45,7 @@ func (p *Param) GetInt(index int) (v int) {
 }
 
 // GetString 能夠以字串取得指定的參數。
-func (p *Param) GetString(index int) (v string) {
+func (p *Param) GetString() (v string) {
 	if val, ok := p.data.(string); ok {
 		v = val
 	}
@@ -53,7 +53,7 @@ func (p *Param) GetString(index int) (v string) {
 }
 
 // GetStringMap 能夠以 `map[string]interface{}` 取得指定的參數。
-func (p *Param) GetStringMap(index int) (v map[string]interface{}) {
+func (p *Param) GetStringMap() (v map[string]interface{}) {
 	if val, ok := p.data.(map[string]interface{}); ok {
 		v = val
 	}
@@ -61,7 +61,7 @@ func (p *Param) GetStringMap(index int) (v map[string]interface{}) {
 }
 
 // GetMapString 能夠以 `map[string]string` 取得指定的參數。
-func (p *Param) GetMapString(index int) (v map[string]string) {
+func (p *Param) GetMapString() (v map[string]string) {
 	if val, ok := p.data.(map[string]string); ok {
 		v = val
 	}
@@ -69,7 +69,7 @@ func (p *Param) GetMapString(index int) (v map[string]string) {
 }
 
 // GetStringSlice 能夠以字串切片取得指定的參數。
-func (p *Param) GetStringSlice(index int) (v []string) {
+func (p *Param) GetStringSlice() (v []string) {
 	if val, ok := p.data.([]string); ok {
 		v = val
 	}
@@ -77,7 +77,7 @@ func (p *Param) GetStringSlice(index int) (v []string) {
 }
 
 // GetTime 能夠以時間取得指定的參數。
-func (p *Param) GetTime(index int) (v time.Time) {
+func (p *Param) GetTime() (v time.Time) {
 	if val, ok := p.data.(time.Time); ok {
 		v = val
 	}
@@ -85,7 +85,7 @@ func (p *Param) GetTime(index int) (v time.Time) {
 }
 
 // GetDuration 能夠以時間長度取得指定的參數。
-func (p *Param) GetDuration(index int) (v time.Duration) {
+func (p *Param) GetDuration() (v time.Duration) {
 	if val, ok := p.data.(time.Duration); ok {
 		v = val
 	}
