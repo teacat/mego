@@ -1,6 +1,7 @@
 package mego
 
 import (
+	"errors"
 	"net/http"
 
 	uuid "github.com/satori/go.uuid"
@@ -52,6 +53,13 @@ const (
 	StatusFileEmpty = 71
 	// StatusFileTooLarge 表示檔案過大無法上傳。
 	StatusFileTooLarge = 72
+)
+
+var (
+	// ErrEventNotFound 表示欲發送的事件沒有被初始化或任何客戶端監聽而無法找到因此發送失敗。
+	ErrEventNotFound = errors.New("the event doesn't exist")
+	// ErrChannelNotFound 表示欲發送的事件存在，但目標頻道沒有被初始化或任何客戶端監聽而無法找到因此發送失敗。
+	ErrChannelNotFound = errors.New("the channel doesn't exist")
 )
 
 // H 是常用的資料格式，簡單說就是 `map[string]interface{}` 的別名。
@@ -221,6 +229,8 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		return
 	}
 
+	// 如果客戶端離線了就自動移除他所監聽的事件和所有 Sessions
+
 	//
 	switch req.Method {
 	//
@@ -269,11 +279,9 @@ func (e *Engine) HandleConnect() *Engine {
 	return e
 }
 
-func (e *Engine) Handle() *Engine {
-	return e
-}
-
-func (e *Engine) HandleSubscribe(event string, handler ...HandlerFunc) *Engine {
+// HandleSubscribe 會更改預設的事件訂閱檢查函式，開發者可傳入一個回呼函式並接收客戶端欲訂閱的事件與頻道和相關資料。
+// 回傳一個 `false` 即表示客戶端的資格不符，將不納入訂閱清單中。該客戶端將無法接收到指定的事件。
+func (e *Engine) HandleSubscribe(handler func(event string, channel string, c *Context) bool) *Engine {
 	return e
 }
 
@@ -317,13 +325,35 @@ func (e *Engine) Register(method string, handler ...HandlerFunc) *Method {
 	return m
 }
 
-// Emit 會帶有指定資料並向所有人廣播指定事件。
-func (e *Engine) Emit(event string, payload interface{}) error {
-	return nil
+// Emit 會帶有指定資料並廣播指定事件與頻道，當頻道為空字串時則廣播到所有頻道。
+func (e *Engine) Emit(event string, channel string, result interface{}) error {
+	ev, ok := e.Events[event]
+	if !ok {
+		return ErrEventNotFound
+	}
+	if ch == ""
+
+	ch, ok := ev.Channels[channel]
+	if !ok {
+		return ErrChannelNotFound
+	}
+	var firstErr error
+	for _, v := range ch.Sessions {
+		v.write(Response{
+			Event:  event,
+			Result: result,
+		})
+		//err := v.websocket.WriteBinary()
+		//if firstErr == nil {
+		//	firstErr = err
+		//}
+	}
+
+	return firstErr
 }
 
 // EmitMultiple 會將指定事件與資料向指定的客戶端切片進行廣播。
-func (e *Engine) EmitMultiple(event string, payload interface{}, sessions []*Session) error {
+func (e *Engine) EmitMultiple(event string, result interface{}, sessions []*Session) error {
 	return nil
 }
 
