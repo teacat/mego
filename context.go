@@ -21,7 +21,7 @@ type Context struct {
 	// Files 為檔案欄位切片，用以存放使用者上傳後的檔案。
 	Files map[string][]*File
 	// Errors 存放開發者自訂的錯誤，可用在中介軟體或處理函式中。
-	Errors []error
+	Errors errorMsgs
 	// Session 是產生此連線的客戶端階段建構體。
 	Session *Session
 	// isAborted 表示了這個請求是不是以已經被終止了。
@@ -47,7 +47,10 @@ type Context struct {
 
 // Error 能夠將發生的錯誤保存到單次 Session 中。
 func (c *Context) Error(err error) *Context {
-	c.Errors = append(c.Errors, err)
+	c.Errors = append(c.Errors, &Error{
+		Err:  err,
+		Type: ErrorTypePrivate,
+	})
 	return c
 }
 

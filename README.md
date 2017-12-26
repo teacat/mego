@@ -697,7 +697,7 @@ func main() {
 	e.Register("CreateUser", func(c *mego.Context) {
 		// 檢查上下文建構體裡是否有任何錯誤。若有則回傳錯誤訊息給客戶端。
 		if len(c.Errors) != 0 {
-			c.AbortWithError(mego.StatusError, nil, c.Errors[0])
+			c.AbortWithError(mego.StatusError, nil, c.Errors[0].Err)
 		}
 	})
 
