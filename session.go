@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/olahol/melody"
+	"github.com/vmihailenco/msgpack"
 )
 
 // Session 是接收請求時的關聯內容，其包含了指向到特定客戶端的函式。
@@ -110,4 +111,11 @@ func (s *Session) GetDuration(key string) (v time.Duration) {
 		v, _ = val.(time.Duration)
 	}
 	return
+}
+
+//
+func (s *Session) write(resp Response) {
+	if msg, err := msgpack.Marshal(resp); err == nil {
+		s.websocket.WriteBinary(msg)
+	}
 }

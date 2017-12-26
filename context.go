@@ -1,7 +1,6 @@
 package mego
 
 import (
-	"fmt"
 	"math"
 	"net"
 	"net/http"
@@ -19,6 +18,8 @@ const (
 type Context struct {
 	// Keys 存放透過 `Set` 儲存的鍵值組，僅限於單次請求。
 	Keys map[string]interface{}
+	// Files 為檔案欄位切片，用以存放使用者上傳後的檔案。
+	Files map[string][]*File
 	// Errors 存放開發者自訂的錯誤，可用在中介軟體或處理函式中。
 	Errors []error
 	// Session 是產生此連線的客戶端階段建構體。
@@ -125,7 +126,7 @@ func (c *Context) AbortWithError(code int, data interface{}, err error) {
 
 // Respond 會以指定的狀態碼、資料回應特定的客戶端。
 func (c *Context) Respond(result interface{}) {
-	c.write(Response{
+	c.Session.write(Response{
 		Result: result,
 		ID:     c.ID,
 	})
@@ -133,7 +134,7 @@ func (c *Context) Respond(result interface{}) {
 
 // RespondWithError 會以指定的狀態碼、錯誤資料與訊息回應特定的客戶端並表示錯誤發生。
 func (c *Context) RespondWithError(code int, data interface{}, err error) {
-	c.write(Response{
+	c.Session.write(Response{
 		Error: ResponseError{
 			Code:    code,
 			Data:    data,
@@ -163,10 +164,11 @@ func (c *Context) Set(key string, value interface{}) {
 
 // MustGet 和 `Get` 相同，但沒有該鍵值組時會呼叫 `panic`。
 func (c *Context) MustGet(key string) interface{} {
-	if v, ok := c.Get(key); ok {
-		return v
+	v, ok := c.Get(key)
+	if !ok {
+		panic(ErrKeyNotFound)
 	}
-	panic(fmt.Sprintf("Key %s does not exist", key))
+	return v
 }
 
 // Get 會取得先前以 `Set` 存放在本次 Session 中的指定鍵值組。
@@ -247,6 +249,45 @@ func (c *Context) GetDuration(key string) (v time.Duration) {
 	return
 }
 
+// GetFile 會回傳一個指定檔案欄位中的檔案。
+func (c *Context) GetFile(name string) (*File, error) {
+	f, err := c.GetFiles(name)
+	if err != nil {
+		return nil, err
+	}
+	return f[0], nil
+}
+
+// MustGetFile 會回傳一個指定檔案欄位中的檔案，並且在沒有該檔案的時候呼叫 `panic` 終止此請求。
+func (c *Context) MustGetFile(name string) *File {
+	f, err := c.GetFile(name)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
+// GetFiles 會取得指定檔案欄位中的全部檔案，並回傳一個檔案切片供開發者遍歷。
+func (c *Context) GetFiles(name string) ([]*File, error) {
+	f, ok := c.Files[name]
+	if !ok {
+		return nil, ErrFileNotFound
+	}
+	if len(f) == 0 {
+		return nil, ErrFileNotFound
+	}
+	return f, nil
+}
+
+// MustGetFiles 會取得指定檔案欄位中的全部檔案，並回傳一個檔案切片供開發者遍歷。沒有該檔案欄位的時候會呼叫 `panic` 終止此請求。
+func (c *Context) MustGetFiles(name string) []*File {
+	f, err := c.GetFiles(name)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
 // Next 來呼叫下一個方法處理函式，常用於中介軟體中。
 func (c *Context) Next() {
 	c.index++
@@ -258,7 +299,7 @@ func (c *Context) Next() {
 
 // Emit 會向此客戶端廣播一個事件。
 func (c *Context) Emit(event string, result interface{}) {
-	c.write(Response{
+	c.Session.write(Response{
 		Event:  event,
 		Result: result,
 	})
@@ -280,16 +321,9 @@ func (c *Context) requestHeader(key string) string {
 	return ""
 }
 
-// write 會將傳入的回應轉譯成 MessagePack 並且寫入 WebSocket。
-func (c *Context) write(resp Response) {
-	if msg, err := msgpack.Marshal(resp); err == nil {
-		c.Session.websocket.WriteBinary(msg)
-	}
-}
-
-// write 會將傳入的回應轉譯成 MessagePack 並且寫入 WebSocket。
+// writeOthers 會將傳入的回應轉譯成 MessagePack 並且寫入除了自己以外的其他客戶端 WebSocket。
 func (c *Context) writeOthers(resp Response) {
 	if msg, err := msgpack.Marshal(resp); err == nil {
-		c.engine.websocket.BroadcastOthers(msg, c.Session.websocket)
+		c.engine.server.websocket.BroadcastOthers(msg, c.Session.websocket)
 	}
 }
