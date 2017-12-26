@@ -162,15 +162,17 @@ e := mego.New()
 
 由於 Mego 和傳統 HTTP 網站框架不同之處在於：Mego 透過 WebSocket 連線。這使你可以主動發送事件到客戶端，而不需要等待客戶端主動來發送請求。
 
+一個事件可以有很多個頻道，類似一個「新訊息」事件可以發送到很多個「聊天室」。透過不同的頻道你可以避免不相關的事件廣播到其他人手中。
+
 ```go
 func main() {
 	e := mego.Default()
 
-	// 廣播一個 `UpdateApp` 事件給所有監聽的客戶端，觸發其事件監聽函式。
-	e.Emit("UpdateApp", nil)
+	// 廣播一個 `UpdateApp` 事件給所有監聽 `Channel1` 頻道的客戶端，觸發其事件監聽函式。
+	e.Emit("UpdateApp", "Channel1", nil)
 
-	// 廣播一個 `UpdateApp` 事件並帶有指定的資料供客戶端讀取。
-	e.Emit("UpdateApp", mego.H{
+	// 廣播一個 `UpdateApp` 事件給 `Channel1` 頻道並帶有指定的資料供客戶端讀取。
+	e.Emit("UpdateApp", "Channel1", mego.H{
 		"version": "1.0.0",
 	})
 
@@ -180,14 +182,15 @@ func main() {
 
 ### 多數廣播
 
-透過 `Emit` 會廣播指定事件給所有連線的客戶端，如果你希望廣播事件給指定的數個客戶端時，你可以透過 `EmitMultiple` 並傳入欲接收指定事件的客戶端階段達成。
+透過 `Emit` 會廣播指定事件給指定頻道的所有連線的客戶端，如果你希望廣播事件給指定頻道中的某個客戶端時，你可以透過 `EmitMultiple` 並傳入欲接收指定事件的客戶端階段達成。
 
 ```go
 func main() {
 	e := mego.Default()
 
-	// 對指定的 [0] 與 [1] 客戶端廣播 `UpdateApp` 事件，其他客戶端不會接收到此事件。
-	e.EmitMultiple("UpdateApp", nil, []*mego.Session{
+	// 對頻道 `Channel1` 內的 [0] 與 [1] 客戶端廣播 `UpdateApp` 事件，
+	// 位於此頻道的其他客戶端不會接收到此事件。
+	e.EmitMultiple("UpdateApp", "Channel1", nil, []*mego.Session{
 		e.Sessions[0],
 		e.Sessions[1],
 	})
@@ -204,8 +207,8 @@ func main() {
 func main() {
 	e := mego.Default()
 
-	// 過濾所有客戶端，僅有 ID 為 `0k3LbEjL` 的才能夠接收到 UpdateApp 事件。
-	e.EmitFilter("UpdateApp", nil, func(s *mego.Session) bool {
+	// 過濾所有客戶端，僅有 ID 為 `0k3LbEjL` 且在 `Channel1` 內才能夠接收到 UpdateApp 事件。
+	e.EmitFilter("UpdateApp", "Channel1", nil, func(s *mego.Session) bool {
 		// 此函式會過濾、遍歷每個客戶端，如果此函式回傳 `true`，此客戶端則會接收到此事件。
 		return s.ID == "0k3LbEjL"
 	})
@@ -324,11 +327,11 @@ func main() {
 	e := mego.Default()
 
 	e.Register("CreateUser", func(c *mego.Context) {
-		// 廣播 UpdateApp 事件給產生此請求的客戶端。
-		c.Emit("UpdateApp", nil)
+		// 廣播 `UpdateApp` 事件到此請求客戶端所監聽的 `Channel1` 中。
+		c.Emit("UpdateApp", "Channel1", nil)
 
-		// 廣播 UpdateApp 事件給產生此請求客戶端以外的「所有其他人」。
-		c.EmitOthers("UpdateApp", nil)
+		// 廣播 `UpdateApp` 事件到此請求客戶端以外「其他所有人」所監聽的 `Channel1` 中。
+		c.EmitOthers("UpdateApp", "Channel1", nil)
 	})
 
 	e.Run()
@@ -354,7 +357,7 @@ func main() {
 
 	// authMw 是一個驗證請求者是否有權限的身份檢查中介軟體。
 	authMw := func(c *mego.Context) {
-		if c.ID != "King" {
+		if c.Session.ID != "jn3Dl74eX" {
 			// ... 驗證邏輯 ...
 		}
 		c.Next()
