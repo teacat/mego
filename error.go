@@ -152,6 +152,7 @@ func (a errorMsgs) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.JSON())
 }
 
+// String 會從錯誤切片輸出成一個可供人類閱讀的錯誤列表字串，其中亦包含所有的中繼資料。
 func (a errorMsgs) String() string {
 	if len(a) == 0 {
 		return ""

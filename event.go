@@ -6,6 +6,7 @@ type Event struct {
 	Name string
 	// Channels 是這個事件的所有頻道。
 	Channels map[string]*Channel
+
 	// engine 是這個事件所依存的主要引擎。
 	engine *Engine
 }
