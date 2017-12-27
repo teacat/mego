@@ -75,25 +75,37 @@ func (c *Context) ClientIP() string {
 }
 
 // Param 能夠從參數陣列中透過指定索引取得特定的參數。
-func (c *Context) Param(index int) Param {
+func (c *Context) Param(indexes ...int) *Param {
+	// 預設索引為 `0` 省去使用者指定的困擾。
+	var index int
+
 	// 如果已解序的參數陣列長度為空，就表示先前可能還沒解序資料成參數陣列。
 	// 因此我們需要透過 MsgPack 解序資料並存成參數陣列。
 	if len(c.params) == 0 {
+		// 如果錯誤發生回傳一個空的參數建構體。
 		if err := msgpack.Unmarshal(c.data, &c.params); err != nil {
-			return Param{
+			return &Param{
 				data: nil,
 				len:  len(c.params),
 			}
 		}
 	}
+
+	// 如果使用者有指定索引則更改。
+	if len(indexes) != 0 {
+		index = indexes[0]
+	}
+
 	// 如果指定的索引位置大於參數陣列長度，則表示無此參數。
 	if index+1 > len(c.params) {
-		return Param{
+		return &Param{
 			data: nil,
 			len:  len(c.params),
 		}
 	}
-	return Param{
+
+	// 不然就回傳指定的參數資料。
+	return &Param{
 		data: c.params[index],
 		len:  len(c.params),
 	}
