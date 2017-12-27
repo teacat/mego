@@ -1,8 +1,10 @@
 package mego
 
 import (
-	"errors"
+	"io"
 	"net/http"
+	"os"
+	"strings"
 
 	uuid "github.com/satori/go.uuid"
 	"github.com/vmihailenco/msgpack"
@@ -56,10 +58,12 @@ const (
 )
 
 var (
-	// ErrEventNotFound 表示欲發送的事件沒有被初始化或任何客戶端監聽而無法找到因此發送失敗。
-	ErrEventNotFound = errors.New("the event doesn't exist")
-	// ErrChannelNotFound 表示欲發送的事件存在，但目標頻道沒有被初始化或任何客戶端監聽而無法找到因此發送失敗。
-	ErrChannelNotFound = errors.New("the channel doesn't exist")
+	// DefaultPort 是 Mego 引擎的預設埠口。
+	DefaultPort = ":5000"
+	// DefaultWriter 是預設的紀錄、資料寫入者。
+	DefaultWriter io.Writer = os.Stdout
+	// DefaultErrorWriter 是預設的錯誤資料寫入者。
+	DefaultErrorWriter io.Writer = os.Stderr
 )
 
 // H 是常用的資料格式，簡單說就是 `map[string]interface{}` 的別名。
@@ -74,16 +78,23 @@ func New() *Engine {
 		Sessions: make(map[string]*Session),
 		Events:   make(map[string]*Event),
 		Methods:  make(map[string]*Method),
+		subscribeHandler: func(e, ch string, c *Context) bool {
+			return true
+		},
 	}
 }
 
 // Default 會建立一個帶有 `Recovery` 和 `Logger` 中介軟體的 Mego 引擎。
 func Default() *Engine {
-	return &Engine{
+	e := &Engine{
 		Sessions: make(map[string]*Session),
 		Events:   make(map[string]*Event),
 		Methods:  make(map[string]*Method),
+		subscribeHandler: func(e, ch string, c *Context) bool {
+			return true
+		},
 	}
+	return e.Use(Recovery(), Logger())
 }
 
 // server 是基礎伺服器用來與基本 HTTP 連線進行互動。
@@ -106,12 +117,15 @@ type Engine struct {
 	Methods map[string]*Method
 	// Option 是這個引擎的設置。
 	Option *EngineOption
+
 	// handlers 是保存將會執行的全域中介軟體切片。
 	handlers []HandlerFunc
 	// noMethod 是當呼叫不存在方式時所會呼叫的處理函式。
 	noMethod []HandlerFunc
-	//
-	websocket *melody.Melody
+	// server 存放了最主要的底層伺服器與其 WebSocket 引擎。
+	server *server
+	// subscribeHandler 是處理所有事件訂閱的函式。
+	subscribeHandler func(event string, channel string, c *Context) bool
 }
 
 // EngineOption 是引擎的選項設置。
@@ -136,8 +150,6 @@ type Method struct {
 	Name string
 	// Handlers 是中介軟體與處理函式。
 	Handlers []HandlerFunc
-	// Processor 是區塊處理介面，如果此方法不允許檔案上傳則忽略此欄位。
-	Processor ChunkProcessor
 	// Option 是此方法的選項。
 	Option *MethodOption
 }
@@ -157,25 +169,31 @@ type MethodOption struct {
 func (e *Engine) Run(port ...string) {
 	// 初始化一個 Melody 套件框架並當作 WebSocket 底層用途。
 	m := melody.New()
-	// 以 WebSocket 初始化一個底層伺服器。
-	s := &server{
+	// 以 WebSocket 初始化一個底層伺服器並存入 Mego。
+	e.server = &server{
 		websocket: m,
 	}
-	e.websocket = m
 
 	// 設定預設埠口。
-	p := ":5000"
+	p := DefaultPort
 	if len(port) > 0 {
 		p = port[0]
 	}
 
-	// 將接收到的所有訊息轉交給控制器。
+	// 將接收到的所有訊息轉交給訊息處理函式。
 	m.HandleMessage(e.messageHandler)
-	//
+	// 將所有連線請求轉交給連線處理函式。
 	m.HandleConnect(e.connectHandler)
+	// 將所有斷線的請求轉交給斷線處理函式。
+	m.HandleDisconnect(e.disconnectHandler)
 
 	// 開始在指定埠口監聽 HTTP 請求並交由底層伺服器處理。
-	http.ListenAndServe(p, s)
+	http.ListenAndServe(p, e.server)
+}
+
+// disconnectHandler 會處理斷開連線的 WebSocket。
+func (e *Engine) disconnectHandler(s *melody.Session) {
+	// 如果客戶端離線了就自動移除他所監聽的事件和所有 Sessions
 }
 
 // connectHandler 處理連接起始的函式。
@@ -195,16 +213,9 @@ func (e *Engine) connectHandler(s *melody.Session) {
 func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 	var req Request
 
-	// 將接收到的資料映射到本地請求建構體。
-	if err := msgpack.Unmarshal(msg, &req); err != nil {
-		// 如果發生錯誤則建立錯誤回應建構體，並傳送到客戶端。
-		resp, _ := msgpack.Marshal(Response{
-			Error: ResponseError{
-				Code:    StatusInvalid,
-				Message: err.Error(),
-			},
-		})
-		s.WriteBinary(resp)
+	// 將接收到的訊息映射到本地端的請求建構體。
+	err := msgpack.Unmarshal(msg, &req)
+	if err != nil {
 		return
 	}
 
@@ -219,69 +230,107 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		return
 	}
 
-	// 如果這個請求要呼叫的方法是 Mego 的初始化函式。
-	if req.Method == "MegoInitialize" {
-		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
+	// 依接收到的方法處理指定的事情。
+	switch methodName := strings.ToUpper(req.Method); methodName {
+	// 呼叫 Mego 初始化方法。
+	case "MEGOINITIALIZE":
 		var keys map[string]interface{}
-		if err := msgpack.Unmarshal(req.Params, &keys); err == nil {
-			sess.Keys = keys
-		}
-		return
-	}
 
-	// 如果客戶端離線了就自動移除他所監聽的事件和所有 Sessions
-
-	//
-	switch req.Method {
-	//
-	case "MegoInitialize":
 		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
-		var keys map[string]interface{}
-		if err := msgpack.Unmarshal(req.Params, &keys); err == nil {
-			sess.Keys = keys
+		if err := msgpack.Unmarshal(req.Params, &keys); err != nil {
+			return
 		}
-		return
+		sess.Keys = keys
 
-	//
-	case "MegoSubscribe":
-		//
-	}
+	// 呼叫 Mego 訂閱方法。
+	case "MEGOSUBSCRIBE":
+		// 取得事件訂閱資料，此為陣列。索引 0 為事件名稱、索引 1 為頻道名稱。
+		if len(req.Event) != 2 {
+			return
+		}
+		evt, ch := req.Event[0], req.Event[1]
 
-	// 呼叫該請求欲呼叫的方法。
-	method, ok := e.Methods[req.Method]
-	if !ok {
-		// 如果該方法不存在，就呼叫不存在方法處理函式。
-	}
+		// 建立一個上下文建構體。
+		ctx := &Context{
+			Session: sess,
+			ID:      req.ID,
+			Request: s.Request,
+			data:    req.Params,
+		}
 
-	// 建立一個上下文建構體。
-	ctx := &Context{
-		Session:  sess,
-		Method:   method,
-		ID:       req.ID,
-		Request:  s.Request,
-		data:     req.Params,
-		handlers: e.handlers,
-	}
-	// 將該方法的處理函式推入上下文建構體中供依序執行。
-	ctx.handlers = append(ctx.handlers, method.Handlers...)
+		// 呼叫訂閱處理函式，如果回傳的是 `true` 才繼續。
+		if ok := e.subscribeHandler(evt, ch, ctx); !ok {
+			return
+		}
 
-	// 如果處理函式數量大於零的話就可以開始執行了。
-	if len(ctx.handlers) > 0 {
-		ctx.handlers[0](ctx)
+		// 如果欲訂閱的事件不存在，就建立一個。
+		if _, ok = e.Events[evt]; !ok {
+			e.Events[evt] = &Event{
+				Name:     evt,
+				Channels: make(map[string]*Channel),
+				engine:   e,
+			}
+		}
+
+		// 如果欲訂閱的頻道不存在，就建立一個。
+		if _, ok = e.Events[evt].Channels[ch]; !ok {
+			e.Events[evt].Channels[ch] = &Channel{
+				Name:  ch,
+				Event: e.Events[evt],
+			}
+		}
+
+		// 如果欲訂閱的階段不在其頻道內，就將該階段存至該頻道作為訂閱者。
+		var has bool
+		for _, v := range e.Events[evt].Channels[ch].Sessions {
+			if v == sess {
+				has = true
+			}
+		}
+		if !has {
+			e.Events[evt].Channels[ch].Sessions = append(e.Events[evt].Channels[ch].Sessions, sess)
+		}
+
+	// 呼叫伺服端現有的方法。
+	default:
+		// 檢查此方法是否存在於伺服器中。
+		method, ok := e.Methods[methodName]
+		if !ok {
+			return
+		}
+
+		// 建立一個上下文建構體。
+		ctx := &Context{
+			Session:  sess,
+			Method:   method,
+			ID:       req.ID,
+			Request:  s.Request,
+			data:     req.Params,
+			handlers: e.handlers,
+		}
+		// 將該方法的處理函式推入上下文建構體中供依序執行。
+		ctx.handlers = append(ctx.handlers, method.Handlers...)
+
+		// 如果處理函式數量大於零的話就可以開始執行了。
+		if len(ctx.handlers) > 0 {
+			ctx.handlers[0](ctx)
+		}
 	}
 }
 
-func (e *Engine) HandleRequest() *Engine {
-	return e
-}
+// HandleRequest 會更改
+// func (e *Engine) HandleRequest() *Engine {
+// 	return e
+// }
 
-func (e *Engine) HandleConnect() *Engine {
-	return e
-}
+// func (e *Engine) HandleConnect() *Engine {
+// 	return e
+// }
 
 // HandleSubscribe 會更改預設的事件訂閱檢查函式，開發者可傳入一個回呼函式並接收客戶端欲訂閱的事件與頻道和相關資料。
 // 回傳一個 `false` 即表示客戶端的資格不符，將不納入訂閱清單中。該客戶端將無法接收到指定的事件。
 func (e *Engine) HandleSubscribe(handler func(event string, channel string, c *Context) bool) *Engine {
+	e.subscribeHandler = handler
 	return e
 }
 
@@ -298,7 +347,7 @@ func (e *Engine) Len() int {
 
 // Close 會結束此引擎的服務。
 func (e *Engine) Close() error {
-	e.websocket.Close()
+	e.server.websocket.Close()
 	return nil
 }
 
@@ -327,13 +376,11 @@ func (e *Engine) Register(method string, handler ...HandlerFunc) *Method {
 
 // Emit 會帶有指定資料並廣播指定事件與頻道，當頻道為空字串時則廣播到所有頻道。
 func (e *Engine) Emit(event string, channel string, result interface{}) error {
-	ev, ok := e.Events[event]
+	evt, ok := e.Events[event]
 	if !ok {
 		return ErrEventNotFound
 	}
-	if ch == ""
-
-	ch, ok := ev.Channels[channel]
+	ch, ok := evt.Channels[channel]
 	if !ok {
 		return ErrChannelNotFound
 	}
@@ -353,24 +400,12 @@ func (e *Engine) Emit(event string, channel string, result interface{}) error {
 }
 
 // EmitMultiple 會將指定事件與資料向指定的客戶端切片進行廣播。
-func (e *Engine) EmitMultiple(event string, result interface{}, sessions []*Session) error {
+func (e *Engine) EmitMultiple(event string, channel string, result interface{}, sessions []*Session) error {
 	return nil
 }
 
 // EmitFilter 會以過濾函式來決定要將帶有指定資料的事件廣播給誰。
 // 如果過濾函式回傳 `true` 則表示該客戶端會接收到該事件。
-func (e *Engine) EmitFilter(event string, payload interface{}, filter func(*Session) bool) error {
+func (e *Engine) EmitFilter(event string, channel string, payload interface{}, filter func(*Session) bool) error {
 	return nil
-}
-
-// Receive 會建立一個指定的方法，並且允許客戶端傳送檔案至此方法。
-func (e *Engine) Receive(method string, handler ...HandlerFunc) *Method {
-	return e.ReceiveWith(method, &DefaultChunkProcessor{}, handler...)
-}
-
-// ReceiveWith 會透過自訂的區塊處理函式建立指定方法，讓客戶端可上傳檔案至此方法並透過自訂方式進行處理。
-func (e *Engine) ReceiveWith(method string, processor ChunkProcessor, handler ...HandlerFunc) *Method {
-	m := e.Register(method, handler...)
-	m.Processor = processor
-	return m
 }
