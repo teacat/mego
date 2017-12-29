@@ -18,8 +18,6 @@ const (
 type Context struct {
 	// Keys 存放透過 `Set` 儲存的鍵值組，僅限於單次請求。
 	Keys map[string]interface{}
-	// Files 為檔案欄位切片，用以存放使用者上傳後的檔案。
-	Files map[string][]*File
 	// Errors 存放開發者自訂的錯誤，可用在中介軟體或處理函式中。
 	Errors errorMsgs
 	// Session 是產生此連線的客戶端階段建構體。
@@ -41,6 +39,8 @@ type Context struct {
 	handlers []HandlerFunc
 	// params 存放著已解序的參數陣列。
 	params []interface{}
+	// files 為檔案欄位切片，用以存放使用者上傳後且已解析的檔案。
+	files map[string][]*File
 	// engine 是主要引擎。
 	engine *Engine
 }
@@ -284,7 +284,7 @@ func (c *Context) MustGetFile(name string) *File {
 
 // GetFiles 會取得指定檔案欄位中的全部檔案，並回傳一個檔案切片供開發者遍歷。
 func (c *Context) GetFiles(name string) ([]*File, error) {
-	f, ok := c.Files[name]
+	f, ok := c.files[name]
 	if !ok {
 		return nil, ErrFileNotFound
 	}
