@@ -2,8 +2,10 @@ package mego
 
 import (
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	uuid "github.com/satori/go.uuid"
@@ -12,16 +14,34 @@ import (
 	"github.com/olahol/melody"
 )
 
+// SubscribeHandler 是訂閱事件處理函式。
+type SubscribeHandler func(evt string, ch string, ctx *Context) bool
+
+// ChunkHandler 是區塊處理函式。
+type ChunkHandler func(ctx *Context, raw *RawFile, dest *File) ChunkStatus
+
+// H 是常用的資料格式，簡單說就是 `map[string]interface{}` 的別名。
+type H map[string]interface{}
+
+// HandlerFunc 是方法處理函式的型態別名。
+type HandlerFunc func(*Context)
+
+// ChunkStatus 是區塊處理結果狀態碼，用以讓 Mego 得知下一步該如何執行。
+type ChunkStatus int
+
+const (
+	// ChunkNext 表示本次處理成功，請求下一個檔案區塊。
+	ChunkNext ChunkStatus = iota
+	// ChunkDone 表示所有區塊皆處理完畢，結束檔案處理。
+	ChunkDone
+	// ChunkAbort 表示不打算處理本檔案了，結束此檔案的處理手續並停止上傳。
+	ChunkAbort
+)
+
 const (
 	// 狀態碼範圍如下：
 	// 0 ~ 50 正常、51 ~ 100 錯誤、101 ~ 999 自訂狀態碼。
 
-	// StatusOK 表示正常。
-	StatusOK = 0
-	// StatusProcessing 表示請求已被接受並且正在處理中，並不會立即完成。
-	StatusProcessing = 1
-	// StatusNoChanges 表示這個請求沒有改變任何結果，例如：使用者刪除了一個早已被刪除的物件。
-	StatusNoChanges = 2
 	// StatusFileNext 表示此檔案區塊已處理完畢，需上傳下個區塊。
 	StatusFileNext = 10
 	// StatusFileAbort 表示終止整個檔案上傳進度。
@@ -66,34 +86,19 @@ var (
 	DefaultErrorWriter io.Writer = os.Stderr
 )
 
-// H 是常用的資料格式，簡單說就是 `map[string]interface{}` 的別名。
-type H map[string]interface{}
-
-// HandlerFunc 是方法處理函式的型態別名。
-type HandlerFunc func(*Context)
-
 // New 會建立一個新的 Mego 空白引擎。
 func New() *Engine {
 	return &Engine{
-		Sessions: make(map[string]*Session),
-		Events:   make(map[string]*Event),
-		Methods:  make(map[string]*Method),
-		subscribeHandler: func(e, ch string, c *Context) bool {
-			return true
-		},
+		Sessions:     make(map[string]*Session),
+		Events:       make(map[string]*Event),
+		Methods:      make(map[string]*Method),
+		chunkHandler: chunkHandler,
 	}
 }
 
 // Default 會建立一個帶有 `Recovery` 和 `Logger` 中介軟體的 Mego 引擎。
 func Default() *Engine {
-	e := &Engine{
-		Sessions: make(map[string]*Session),
-		Events:   make(map[string]*Event),
-		Methods:  make(map[string]*Method),
-		subscribeHandler: func(e, ch string, c *Context) bool {
-			return true
-		},
-	}
+	e := New()
 	return e.Use(Recovery(), Logger())
 }
 
@@ -125,7 +130,9 @@ type Engine struct {
 	// server 存放了最主要的底層伺服器與其 WebSocket 引擎。
 	server *server
 	// subscribeHandler 是處理所有事件訂閱的函式。
-	subscribeHandler func(event string, channel string, c *Context) bool
+	subscribeHandler SubscribeHandler
+	// chunkHandler 是預設的方法區塊處理回呼函式，能被各個方法獨立覆蓋。
+	chunkHandler ChunkHandler
 }
 
 // EngineOption 是引擎的選項設置。
@@ -142,6 +149,8 @@ type EngineOption struct {
 	// CheckInterval 是每隔幾秒進行一次階段是否仍存在的連線檢查，
 	// 此為輕量檢查而非發送回應至客戶端。
 	CheckInterval int
+	//
+	SessionKeepAlive int
 }
 
 // Method 呈現了一個方法。
@@ -152,6 +161,8 @@ type Method struct {
 	Handlers []HandlerFunc
 	// Option 是此方法的選項。
 	Option *MethodOption
+	// ChunkHandler 是本方法的區塊處理回呼函式。
+	ChunkHandler ChunkHandler
 }
 
 // MethodOption 是一個方法的選項。
@@ -183,7 +194,7 @@ func (e *Engine) Run(port ...string) {
 	// 將接收到的所有訊息轉交給訊息處理函式。
 	m.HandleMessage(e.messageHandler)
 	// 將所有連線請求轉交給連線處理函式。
-	m.HandleConnect(e.connectHandler)
+	// m.HandleConnect(e.connectHandler)
 	// 將所有斷線的請求轉交給斷線處理函式。
 	m.HandleDisconnect(e.disconnectHandler)
 
@@ -200,6 +211,7 @@ func (e *Engine) disconnectHandler(s *melody.Session) {
 func (e *Engine) connectHandler(s *melody.Session) {
 	// 替此階段建立一個獨立的 UUID。
 	id := uuid.NewV4().String()
+
 	// 在底層階段存放此階段的編號。
 	s.Set("ID", id)
 	// 將 Mego 階段放入引擎中保存。
@@ -220,10 +232,44 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 	}
 
 	// 取得這個 WebSocket 階段對應的 Mego 階段。
+	// 如果沒有的話則當此請求為初次設置。
 	id, ok := s.Get("ID")
 	if !ok {
-		return
+		var keys map[string]interface{}
+
+		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
+		if err := msgpack.Unmarshal(req.Params, &keys); err != nil {
+			return
+		}
+		// 如果鍵值組中沒有 Mego 客戶端建立的獨立編號就離開。
+		i, ok := keys["MegoID"]
+		if !ok {
+			return
+		}
+		// 如果獨立編號不是字串也離開。
+		id, ok := i.(string)
+		if !ok {
+			return
+		}
+		// 如果 UUID 不正確也離開。
+		_, err := uuid.FromString(id)
+		if err != nil {
+			return
+		}
+
+		// 在底層階段存放此階段的編號。
+		s.Set("ID", id)
+
+		// 將 Mego 階段放入引擎中保存。
+		e.Sessions[id] = &Session{
+			ID:        id,
+			websocket: s,
+		}
 	}
+
+	// 重新取得一次此客戶端的獨立 UUID 編號。
+	id, _ = s.Get("ID")
+
 	// 透過獨有編號在引擎中找出相對應的階段資料。
 	sess, ok := e.Sessions[id.(string)]
 	if !ok {
@@ -232,16 +278,6 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 
 	// 依接收到的方法處理指定的事情。
 	switch methodName := strings.ToUpper(req.Method); methodName {
-	// 呼叫 Mego 初始化方法。
-	case "MEGOINITIALIZE":
-		var keys map[string]interface{}
-
-		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
-		if err := msgpack.Unmarshal(req.Params, &keys); err != nil {
-			return
-		}
-		sess.Keys = keys
-
 	// 呼叫 Mego 訂閱方法。
 	case "MEGOSUBSCRIBE":
 		// 取得事件訂閱資料，此為陣列。索引 0 為事件名稱、索引 1 為頻道名稱。
@@ -259,8 +295,10 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		}
 
 		// 呼叫訂閱處理函式，如果回傳的是 `true` 才繼續。
-		if ok := e.subscribeHandler(evt, ch, ctx); !ok {
-			return
+		if e.subscribeHandler != nil {
+			if ok := e.subscribeHandler(evt, ch, ctx); !ok {
+				return
+			}
 		}
 
 		// 如果欲訂閱的事件不存在，就建立一個。
@@ -311,6 +349,13 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		// 將該方法的處理函式推入上下文建構體中供依序執行。
 		ctx.handlers = append(ctx.handlers, method.Handlers...)
 
+		// 解析上傳的檔案。
+		if done := e.fileHandler(ctx, req.Files); !done {
+			// 如果是區塊檔案且尚未處理完畢，就先不要繼續執行。
+			// 告訴客戶端上傳下一個區塊。
+			return
+		}
+
 		// 如果處理函式數量大於零的話就可以開始執行了。
 		if len(ctx.handlers) > 0 {
 			ctx.handlers[0](ctx)
@@ -318,19 +363,143 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 	}
 }
 
-// HandleRequest 會更改
-// func (e *Engine) HandleRequest() *Engine {
-// 	return e
-// }
+// chunkHandler 是預設的區塊處理函式，這會接收區塊並組成一個檔案。
+func chunkHandler(c *Context, raw *RawFile, dest *File) ChunkStatus {
+	// 在系統中建立並開啟一個新的暫存檔案。
+	t, err := ioutil.TempFile("", "")
+	if err != nil {
 
-// func (e *Engine) HandleConnect() *Engine {
-// 	return e
-// }
+	}
+	// 將使用者上傳的位元組內容寫入暫存檔案中，並取得該位元組長度做為檔案大小。
+	size, err := t.Write(raw.Binary)
+	if err != nil {
+
+	}
+
+	// 如果這是最後一個區塊就回傳處理完成狀態碼。
+	if raw.Last {
+		// 從檔案名稱中取得名稱與副檔名。
+		ext := filepath.Ext(raw.Name)
+		name := strings.TrimSuffix(raw.Name, ext)
+
+		// 如果副檔名長度過短就是出問題了。
+		if len(ext) < 2 {
+
+		}
+
+		// 將正確的檔案資料配置到檔案建構體中。
+		dest.Name = name
+		dest.Extension = ext[1:]
+		dest.Path = t.Name()
+		dest.Size = size
+
+		//
+		return ChunkDone
+	}
+	return ChunkNext
+}
+
+// fileHandler 會處理並解析接收到的檔案。如果接收到了區塊內容，則會呼叫額外的區塊處理函式。
+// 在這種情況本函式會回傳 `false` 來終止請求的繼續，直到所有區塊都處理完為止。
+func (e *Engine) fileHandler(c *Context, fields map[string][]*RawFile) bool {
+	// 遍歷每個檔案欄位。
+	for field, files := range fields {
+		// 如果這個檔案欄位不存在於本地的上下文建構體中，
+		// 那麼就初始化一個。
+		if _, ok := c.files[field]; !ok {
+			c.files[field] = []*File{}
+		}
+
+		// 遍歷這個檔案欄位中的所有檔案。
+		for _, f := range files {
+			// 如果這個檔案內容不是最後結果，即表示這是個區塊內容。
+			if !f.Last {
+				// 初始化一個目標檔案，在區塊組合完畢後就使用這個檔案建構體。
+				var dest *File
+				var status ChunkStatus
+
+				// 呼叫區塊處理函式。
+				switch {
+				// 如果此方法有自訂的區塊處理函式則優先呼叫。
+				case c.Method.ChunkHandler != nil:
+					status = c.Method.ChunkHandler(c, f, dest)
+				// 沒有則就呼叫全域區塊處理函式。
+				case e.chunkHandler != nil:
+					status = e.chunkHandler(c, f, dest)
+				}
+
+				// 依照區塊處理的狀態碼決定下一步。
+				switch status {
+				// ChunkNext 表示本次處理成功，請求下一個檔案區塊。
+				case ChunkNext:
+					c.Session.write(Response{
+						Event: "MegoChunkNext",
+						ID:    c.ID,
+					})
+					// 結束本次請求，避免區塊還沒處理完畢就繼續呼叫了接下來的方法函式。
+					return false
+				// ChunkAbort 表示不打算處理本檔案了，結束此檔案的處理手續並停止上傳。
+				case ChunkAbort:
+					c.Session.write(Response{
+						Event: "MegoChunkAbort",
+						ID:    c.ID,
+					})
+					// 結束本次請求，避免區塊還沒處理完畢就繼續呼叫了接下來的方法函式。
+					return false
+				// ChunkDone 表示所有區塊皆處理完畢，結束檔案處理。
+				case ChunkDone:
+					// 將這個檔案整理後推入至上下文建構體中的檔案欄位。
+					c.files[field] = append(c.files[field], dest)
+					// 繼續本次請求，並呼叫接下來的方法函式。
+					return true
+				}
+			}
+
+			// 在系統中建立並開啟一個新的暫存檔案。
+			t, err := ioutil.TempFile("", "")
+			if err != nil {
+
+			}
+
+			// 將使用者上傳的位元組內容寫入暫存檔案中，並取得該位元組長度做為檔案大小。
+			size, err := t.Write(f.Binary)
+			if err != nil {
+
+			}
+
+			// 從檔案名稱中取得名稱與副檔名。
+			ext := filepath.Ext(f.Name)
+			name := strings.TrimSuffix(f.Name, ext)
+
+			// 如果副檔名長度過短就是出問題了。
+			if len(ext) < 2 {
+
+			}
+
+			// 將這個檔案整理後推入至上下文建構體中的檔案欄位。
+			c.files[field] = append(c.files[field], &File{
+				Name:      name,
+				Extension: ext[1:],
+				Path:      t.Name(),
+				Size:      size,
+			})
+		}
+	}
+
+	return true
+}
 
 // HandleSubscribe 會更改預設的事件訂閱檢查函式，開發者可傳入一個回呼函式並接收客戶端欲訂閱的事件與頻道和相關資料。
 // 回傳一個 `false` 即表示客戶端的資格不符，將不納入訂閱清單中。該客戶端將無法接收到指定的事件。
-func (e *Engine) HandleSubscribe(handler func(event string, channel string, c *Context) bool) *Engine {
+func (e *Engine) HandleSubscribe(handler SubscribeHandler) *Engine {
 	e.subscribeHandler = handler
+	return e
+}
+
+// HandleChunk 會更改預設的區塊處理函式，開發者可以傳入一個回呼函式並接收區塊內容。
+// 回傳 `ChunkStatus` 來告訴 Mego 區塊的處理狀態如何。
+func (e *Engine) HandleChunk(handler ChunkHandler) *Engine {
+	e.chunkHandler = handler
 	return e
 }
 
