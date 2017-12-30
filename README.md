@@ -18,7 +18,7 @@
 
 # Mego
 
-用以取代傳統 [RESTful](https://zh.wikipedia.org/zh-tw/REST) 溝通結構，並且以[類 RPC](https://zh.wikipedia.org/zh-tw/%E9%81%A0%E7%A8%8B%E9%81%8E%E7%A8%8B%E8%AA%BF%E7%94%A8) 的方式以 [MessagePack](http://msgpack.org/) 將資料進行壓縮並透過 [WebSocket](https://developer.mozilla.org/zh-TW/docs/WebSockets/WebSockets_reference/WebSocket) 傳遞使資料更加輕量。同時亦支援分塊檔案上傳。
+類似 [Gin](https://github.com/gin-gonic/gin) 用法，用以取代傳統 [RESTful](https://zh.wikipedia.org/zh-tw/REST) 溝通結構，並且以[類 RPC](https://zh.wikipedia.org/zh-tw/%E9%81%A0%E7%A8%8B%E9%81%8E%E7%A8%8B%E8%AA%BF%E7%94%A8) 的方式以 [MessagePack](http://msgpack.org/) 將資料進行壓縮並透過 [WebSocket](https://developer.mozilla.org/zh-TW/docs/WebSockets/WebSockets_reference/WebSocket) 傳遞使資料更加輕量。同時亦支援分塊檔案上傳。
 
 # 這是什麼？
 
@@ -595,15 +595,44 @@ func main() {
 
 ### 區塊上傳
 
-如果客戶端中的檔案過大，區塊上傳便是最好的方法。透過 `Chunker()` 在方法中初始化一個區塊處理中介軟體。這個中介軟體能協助你將 Mego 區塊轉換成一個完整的檔案。
+如果客戶端中的檔案過大，區塊上傳便是最好的方法。你不需要在 Mego 特別設置，Mego 即會自動組合區塊。使用這個區塊上傳時方法只會接收到一個完整檔案與起初傳遞的資料。透過 `GetFile` 直接取得完整的檔案。
 
-使用這個中介軟體後，方法只會接收到一個完整檔案與起初傳遞的資料。透過 `GetFile` 直接取得完整的檔案。
+如果你希望能夠手動處理區塊，例如搭配 Amazon S3 的 Multi-part 將接收到的每個區塊都各自上傳至雲端時，請更改方法中的 `ChunkHandler`。
+
+一個自訂的區塊處理函式內部結構看起來應該要像這樣。
+
+```go
+// 建立一個自訂的區塊處理函式。
+myChunkHandler := func(c *mego.Context, raw *mego.RawFile, dest *mego.File) mego.ChunkStatus {
+	// ... 區塊處理邏輯 ...
+	// fmt.Println(raw.Binary)
+
+	// 如果這個區塊是最後一塊的話。
+	if raw.Last {
+		// 將完成的資料保存到檔案建構體。
+		dest.Name = "MyFile"
+		dest.Size = 128691
+
+		// 表示區塊處理完畢。
+		return mego.ChunkDone
+	}
+
+	// 如果尚未完成則要求客戶端傳送下一塊。
+	return mego.ChunkNext
+}
+```
+
+照理來說 Mego 就能協助你處理區塊組合了，不過如果你像上述ㄧ樣建立了自訂的區塊組合函式，透過 `HandleChunk` 能夠覆蓋全域的預設區塊處理函式。透過修改方法中的 `ChunkHandler` 能夠獨立修改各個方法的區塊處理函式。
 
 ```go
 func main() {
 	e := mego.Default()
 
-	e.Register("UploadPhoto", mego.Chunker(), func(c *mego.Context) {
+	// 更改全域的區塊處理函式。
+	e.HandleChunk(myChunkHandler)
+
+	// 註冊一個接受檔案的方法供客戶端上傳檔案至此。
+	e.Register("UploadVideo", func(c *mego.Context) {
 		var u User
 
 		// 取得已從區塊組成的完整檔案。
@@ -614,6 +643,9 @@ func main() {
 		c.MustBind(&u)
 		fmt.Println(u.Username)
 	})
+
+	// 你也能獨立更改 `UploadVideo` 方法的區塊處理函式。
+	e.Method["UploadVideo"].ChunkHandler = myChunkHandler
 
 	e.Run()
 }
