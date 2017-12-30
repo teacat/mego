@@ -149,8 +149,6 @@ type EngineOption struct {
 	// CheckInterval 是每隔幾秒進行一次階段是否仍存在的連線檢查，
 	// 此為輕量檢查而非發送回應至客戶端。
 	CheckInterval int
-	//
-	SessionKeepAlive int
 }
 
 // Method 呈現了一個方法。
@@ -193,8 +191,6 @@ func (e *Engine) Run(port ...string) {
 
 	// 將接收到的所有訊息轉交給訊息處理函式。
 	m.HandleMessage(e.messageHandler)
-	// 將所有連線請求轉交給連線處理函式。
-	// m.HandleConnect(e.connectHandler)
 	// 將所有斷線的請求轉交給斷線處理函式。
 	m.HandleDisconnect(e.disconnectHandler)
 
@@ -205,20 +201,6 @@ func (e *Engine) Run(port ...string) {
 // disconnectHandler 會處理斷開連線的 WebSocket。
 func (e *Engine) disconnectHandler(s *melody.Session) {
 	// 如果客戶端離線了就自動移除他所監聽的事件和所有 Sessions
-}
-
-// connectHandler 處理連接起始的函式。
-func (e *Engine) connectHandler(s *melody.Session) {
-	// 替此階段建立一個獨立的 UUID。
-	id := uuid.NewV4().String()
-
-	// 在底層階段存放此階段的編號。
-	s.Set("ID", id)
-	// 將 Mego 階段放入引擎中保存。
-	e.Sessions[id] = &Session{
-		ID:        id,
-		websocket: s,
-	}
 }
 
 // messageHandler 處理所有接收到的訊息，並轉接給相對應的方法處理函式。
