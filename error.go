@@ -15,15 +15,15 @@ type ErrorType uint64
 
 var (
 	// ErrEventNotFound 表示欲發送的事件沒有被初始化或任何客戶端監聽而無法找到因此發送失敗。
-	ErrEventNotFound = errors.New("the event doesn't exist")
+	ErrEventNotFound = errors.New("mego: the event doesn't exist")
 	// ErrChannelNotFound 表示欲發送的事件存在，但目標頻道沒有被初始化或任何客戶端監聽而無法找到因此發送失敗。
-	ErrChannelNotFound = errors.New("the channel doesn't exist")
+	ErrChannelNotFound = errors.New("mego: the channel doesn't exist")
 	// ErrFileNotFound 表示欲取得的檔案並不存在，可能是客戶端上傳不完整。
-	ErrFileNotFound = errors.New("the file was not found")
+	ErrFileNotFound = errors.New("mego: the file was not found")
 	// ErrKeyNotFound 表示欲從鍵值組中取得的鍵名並不存在。
-	ErrKeyNotFound = errors.New("the key was not found")
+	ErrKeyNotFound = errors.New("mego: the key was not found")
 	// ErrPanicRecovered 表示 Panic 發生了但已回復正常。
-	ErrPanicRecovered = errors.New("panic recovered")
+	ErrPanicRecovered = errors.New("mego: panic recovered")
 )
 
 const (
