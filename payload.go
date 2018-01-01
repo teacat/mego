@@ -42,8 +42,9 @@ type RawFile struct {
 	Binary []byte `codec:"b" msgpack:"b"`
 	// ID 是由客戶端替此檔案所產生的順序編號，用於區塊組合。
 	ID int `codec:"i" msgpack:"i"`
-	// Last 表示此二進制是否為最後一個區塊。
-	Last bool `codec:"l" msgpack:"l"`
+	// Parts 呈現區塊的分塊進度。索引 0 表示總共區塊數，索引 1 則是本區塊編號。
+	// 如果這個切片是空的表示此為實體檔案而非區塊。
+	Parts []int `codec:"p" msgpack:"p"`
 	// Name 是檔案的原始名稱。
 	Name string `codec:"n" msgpack:"n"`
 }

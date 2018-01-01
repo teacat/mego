@@ -358,8 +358,13 @@ func chunkHandler(c *Context, raw *RawFile, dest *File) ChunkStatus {
 
 	}
 
+	// 取得總區塊數。
+	total := raw.Parts[0]
+	// 取得本區塊編號。
+	current := raw.Parts[1]
+
 	// 如果這是最後一個區塊就回傳處理完成狀態碼。
-	if raw.Last {
+	if current < total {
 		// 從檔案名稱中取得名稱與副檔名。
 		ext := filepath.Ext(raw.Name)
 		name := strings.TrimSuffix(raw.Name, ext)
@@ -395,7 +400,7 @@ func (e *Engine) fileHandler(c *Context, fields map[string][]*RawFile) bool {
 		// 遍歷這個檔案欄位中的所有檔案。
 		for _, f := range files {
 			// 如果這個檔案內容不是最後結果，即表示這是個區塊內容。
-			if !f.Last {
+			if len(f.Parts) > 0 {
 				// 初始化一個目標檔案，在區塊組合完畢後就使用這個檔案建構體。
 				var dest *File
 				var status ChunkStatus
