@@ -61,7 +61,10 @@ Mego 是基於 [`net/http`](https://golang.org/pkg/net/http/) 和 [`olahol/melod
 * [安裝方式](#安裝方式)
 * [使用方式](#使用方式)
   * [初始化引擎](#初始化引擎)
-  * [廣播與建立事件](#廣播與建立事件)
+  * [廣播與事件](#廣播與事件)
+	* [預設訂閱處理函式](#預設訂閱處理函式)
+	* [手動訂閱](#手動訂閱)
+	* [手動取消訂閱](#手動取消訂閱)
     * [多數廣播](#多數廣播)
     * [過濾廣播](#過濾廣播)
   * [映射資料與參數](#映射資料與參數)
@@ -147,7 +150,7 @@ e := mego.Default()
 e := mego.New()
 ```
 
-## 廣播與建立事件
+## 廣播與事件
 
 由於 Mego 和傳統 HTTP 網站框架不同之處在於：Mego 透過 WebSocket 連線。這使你可以主動發送事件到客戶端，而不需要等待客戶端主動來發送請求。
 
@@ -163,6 +166,65 @@ func main() {
 	// 廣播一個 `UpdateApp` 事件給 `Channel1` 頻道並帶有指定的資料供客戶端讀取。
 	e.Emit("UpdateApp", "Channel1", mego.H{
 		"version": "1.0.0",
+	})
+
+	e.Run()
+}
+```
+
+### 預設訂閱處理函式
+
+在 Mego 中，預設允許客戶端訂閱任何事件與其頻道，透過 `HandleSubscribe` 能夠更改訂閱處理函式。此函式會接收所有來自客戶端的訂閱請求與事件和頻道名稱。當處理函式回傳 `false` 的時候即表示客戶端不被允許訂閱此事件與頻道。
+
+如果你希望使用者訂閱事件的時候需要傳入認證資料，例如：聊天室密碼⋯等。那麼你就該回傳 `false` 否決所有的訂閱事件，並見下方說明採用「手動訂閱」方式。
+
+```go
+func main() {
+	e := mego.Default()
+
+	// 更改預設的事件訂閱處理函式。
+	e.HandleSubscribe(func(evt string, ch string, ctx *mego.Context) bool {
+		fmt.Printf("客戶端訂閱了 %s 事件的 %s 頻道！", evt, ch)
+		return true
+	})
+
+	e.Run()
+}
+```
+
+### 手動訂閱
+
+客戶端能夠自行訂閱指定的事件與頻道，但如果這不太安全，請透過 `HandleSubscribe` 將所有訂閱事件回傳 `false` 拒絕。
+
+接著以 `Register` 建立新的方法供客戶端傳遞認證資料至此，並在此方法內以 `Subscribe` 手動將經過認證的客戶端加入至訂閱清單中。
+
+```go
+func main() {
+	e := mego.Default()
+
+	// 建立一個會協助客戶端訂閱事件的方法。
+	e.Register("SubscribeMyEvent", func(c *mego.Context) {
+		// ... 認證邏輯 ...
+
+		// 手動讓這個客戶端訂閱 `MyEvent` 事件中的 `MyChannel` 頻道。
+		c.Subscribe("MyEvent", "MyChannel")
+	})
+
+	e.Run()
+}
+```
+
+### 手動取消訂閱
+
+透過 `Unsubscribe` 在伺服端將一個訂閱指定事件的客戶端從監聽清單上移除，此客戶將不再接收到指定事件。
+
+```go
+func main() {
+	e := mego.Default()
+
+	e.Register("UnsubscribeMyEvent", func(c *mego.Context) {
+		// 這個客戶端將會取消訂閱 `MyEvent` 事件中的 `MyChannel` 頻道。
+		c.Unsubscribe("MyEvent", "MyChannel")
 	})
 
 	e.Run()
@@ -743,7 +805,7 @@ Mego 有附帶數個官方客戶端。
 
 # 狀態碼
 
-在 Mego 中有內建這些狀態碼，但令 Mego 優於傳統 RESTful API 之處在於你可以自訂你自己的狀態碼。狀態碼是由數字奠定，如果你想要自訂自己的狀態碼，請從 `101` 開始。
+在 Mego 中有內建這些狀態碼，但令 Mego 優於傳統 RESTful API 之處在於你可以自訂你自己的狀態碼。狀態碼是由數字奠定，如果你想要自訂自己的狀態碼，請從 `0` 開始。
 
 | 狀態碼                   | 說明                                                                      |
 |-------------------------|--------------------------------------------------------------------------|
