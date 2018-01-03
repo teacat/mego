@@ -203,6 +203,44 @@ func (e *Engine) disconnectHandler(s *melody.Session) {
 	// 如果客戶端離線了就自動移除他所監聽的事件和所有 Sessions
 }
 
+// subscribe 會替傳入的 Session 訂閱指定的事件與頻道。
+func (e *Engine) subscribe(sess *Session, evtName string, chName string) {
+	// 如果欲訂閱的事件不存在，就建立一個。
+	evt, ok := e.Events[evtName]
+	if !ok {
+		e.Events[evtName] = &Event{
+			Name:     evtName,
+			Channels: make(map[string]*Channel),
+			engine:   e,
+		}
+	}
+	// 如果欲訂閱的頻道不存在，就建立一個。
+	ch, ok := evt.Channels[chName]
+	if !ok {
+		evt.Channels[chName] = &Channel{
+			Name:  chName,
+			Event: evt,
+		}
+	}
+	// 如果欲訂閱的階段不在其頻道內，就將該階段存至該頻道作為訂閱者。
+	var has bool
+	for _, v := range ch.Sessions {
+		if v == sess {
+			has = true
+		}
+	}
+	if !has {
+		ch.Sessions = append(ch.Sessions, sess)
+	}
+}
+
+// unsubscribe 會替傳入的 Session 取消訂閱指定的事件與頻道。
+func (e *Engine) unsubscribe(sess *Session, evtName string, chName string) {
+	if ch, ok := e.Events[evtName].Channels[chName]; ok {
+		ch.Kick(sess.ID)
+	}
+}
+
 // messageHandler 處理所有接收到的訊息，並轉接給相對應的方法處理函式。
 func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 	var req Request
@@ -260,14 +298,8 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 
 	// 依接收到的方法處理指定的事情。
 	switch methodName := strings.ToUpper(req.Method); methodName {
-	// 呼叫 Mego 訂閱方法。
-	case "MEGOSUBSCRIBE":
-		// 取得事件訂閱資料，此為陣列。索引 0 為事件名稱、索引 1 為頻道名稱。
-		if len(req.Event) != 2 {
-			return
-		}
-		evt, ch := req.Event[0], req.Event[1]
-
+	// 呼叫 Mego 取消訂閱方法。
+	case "MEGOUNSUBSCRIBE":
 		// 建立一個上下文建構體。
 		ctx := &Context{
 			Session: sess,
@@ -275,6 +307,25 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 			Request: s.Request,
 			data:    req.Params,
 		}
+		// 取得事件訂閱資料，此為陣列。索引 0 為事件名稱、索引 1 為頻道名稱。
+		evt := ctx.Param(0).GetString()
+		ch := ctx.Param(1).GetString()
+
+		// 執行此客戶端的取消訂閱方法。
+		e.unsubscribe(sess, evt, ch)
+
+	// 呼叫 Mego 訂閱方法。
+	case "MEGOSUBSCRIBE":
+		// 建立一個上下文建構體。
+		ctx := &Context{
+			Session: sess,
+			ID:      req.ID,
+			Request: s.Request,
+			data:    req.Params,
+		}
+		// 取得事件訂閱資料，此為陣列。索引 0 為事件名稱、索引 1 為頻道名稱。
+		evt := ctx.Param(0).GetString()
+		ch := ctx.Param(1).GetString()
 
 		// 呼叫訂閱處理函式，如果回傳的是 `true` 才繼續。
 		if e.subscribeHandler != nil {
@@ -282,34 +333,8 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 				return
 			}
 		}
-
-		// 如果欲訂閱的事件不存在，就建立一個。
-		if _, ok = e.Events[evt]; !ok {
-			e.Events[evt] = &Event{
-				Name:     evt,
-				Channels: make(map[string]*Channel),
-				engine:   e,
-			}
-		}
-
-		// 如果欲訂閱的頻道不存在，就建立一個。
-		if _, ok = e.Events[evt].Channels[ch]; !ok {
-			e.Events[evt].Channels[ch] = &Channel{
-				Name:  ch,
-				Event: e.Events[evt],
-			}
-		}
-
-		// 如果欲訂閱的階段不在其頻道內，就將該階段存至該頻道作為訂閱者。
-		var has bool
-		for _, v := range e.Events[evt].Channels[ch].Sessions {
-			if v == sess {
-				has = true
-			}
-		}
-		if !has {
-			e.Events[evt].Channels[ch].Sessions = append(e.Events[evt].Channels[ch].Sessions, sess)
-		}
+		// 執行此客戶端的訂閱方法。
+		e.subscribe(sess, evt, ch)
 
 	// 呼叫伺服端現有的方法。
 	default:
