@@ -31,8 +31,8 @@ func (c *Channel) Destroy() {
 	delete(c.Event.Channels, c.Name)
 }
 
-// Disconnect 會斷開有註冊此頻道指定階段，避免繼續接收到相關事件。
-func (c *Channel) Disconnect(id string) {
+// Kick 會移除有註冊此頻道指定階段，避免繼續接收到相關事件。
+func (c *Channel) Kick(id string) {
 	for i, v := range c.Sessions {
 		if v.ID == id {
 			c.Sessions = append(c.Sessions[:i], c.Sessions[i+1:]...)
