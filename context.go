@@ -74,6 +74,18 @@ func (c *Context) ClientIP() string {
 	return ""
 }
 
+// Subscribe 能將此客戶納入指定事件、頻道的監聽清單中，方能接收其事件。
+func (c *Context) Subscribe(event string, channel string) *Context {
+	c.engine.subscribe(c.Session, event, channel)
+	return c
+}
+
+// Unsubscribe 會將此客戶端從指定的事件、頻道監聽清單中移除。
+func (c *Context) Unsubscribe(event string, channel string) *Context {
+	c.engine.unsubscribe(c.Session, event, channel)
+	return c
+}
+
 // Param 能夠從參數陣列中透過指定索引取得特定的參數。
 func (c *Context) Param(indexes ...int) *Param {
 	// 預設索引為 `0` 省去使用者指定的困擾。
