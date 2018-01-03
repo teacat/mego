@@ -10,8 +10,6 @@ type Request struct {
 	Params []byte `codec:"p" msgpack:"p"`
 	// ID 為本次請求編號，若無則為單次通知廣播不需回應。
 	ID int `codec:"i" msgpack:"i"`
-	// Event 是欲註冊的事件名稱（索引 0）與頻道（索引 1）。
-	Event []string `codec:"e" msgpack:"e"`
 }
 
 // Response 呈現了 Mego 將會回應給客戶端的內容。
