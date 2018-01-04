@@ -8,8 +8,7 @@ type RequestLimitConfig struct {
 
 // RequestLimit 會回傳一個能夠限制單個方法最大同時請求數的中介軟體。
 func RequestLimit(conf RequestLimitConfig) HandlerFunc {
-	// 建立一個計數器。
-	count := 0
+	var count int
 
 	return func(c *Context) {
 		// 如果大於限制就終止這個請求。
