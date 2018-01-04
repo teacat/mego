@@ -1,38 +1,51 @@
 package client
 
 import (
-	"errors"
-	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
+	"time"
+
+	"github.com/TeaMeow/Mego"
 
 	"github.com/gorilla/websocket"
 	uuid "github.com/satori/go.uuid"
 	"github.com/vmihailenco/msgpack"
 )
 
+// H 是 `map[string]interface{}` 簡寫。
+type H map[string]interface{}
+
 var (
-	// ErrChunkWithFiles 表示不能上傳區塊檔案同時夾帶其他檔案實體。
-	ErrChunkWithFiles = errors.New("mego: cannot send the file chunks with the file entities")
-	// ErrTimeout 表示一個請求過久都沒有回應。
-	ErrTimeout = errors.New("mego: request timeout")
-	// ErrClosed 表示正在使用一個已經關閉的連線。
-	ErrClosed = errors.New("mego: use of closed connection")
+	// ChunkSize 是預設的區塊分切基準位元組大小。
+	ChunkSize = mego.MB * 1
+	// Timeout 是預設的逾期秒數。
+	Timeout = time.Second * 15
+	// UploadTimeout 是每個區塊、所有檔案的上傳逾期秒數，`0` 表示無上限。
+	UploadTimeout = time.Second * 30
 )
 
-func NewClient(url string) *Client {
+// New 能夠回傳一個新的客戶端。
+func New(url string) *Client {
 	return &Client{
 		URL:  url,
 		UUID: uuid.NewV4().String(),
+		Option: &ClientOption{
+			ChunkSize:     ChunkSize,
+			Timeout:       Timeout,
+			UploadTimeout: UploadTimeout,
+		},
 	}
 }
 
+// ClientOption 呈現了一個客戶端的設置。
 type ClientOption struct {
 	// ChunkSize 是預設的區塊分切基準位元組大小。
 	ChunkSize int
+	// Timeout 是預設的逾期秒數。
+	Timeout time.Duration
+	// UploadTimeout 是每個區塊、所有檔案的上傳逾期秒數，`0` 表示無上限。
+	UploadTimeout time.Duration
 }
 
+// Client 是一個客戶端。
 type Client struct {
 	// URL 是遠端 Mego 伺服器的網址。
 	URL string
@@ -41,14 +54,14 @@ type Client struct {
 	// Option 是這個客戶端的設置選項。
 	Option *ClientOption
 
-	// reponseLocks 是用來保存回應阻塞頻道的切片。
-	reponseLocks map[int]*chan bool
-	//
+	// requests 是用來保存請求的儲藏區。
+	requests map[int]Request
+	// fileID 是自動遞增的檔案編號。
 	fileID int
-	//
-	fileNameID int
 	// taskID 是遞加的請求編號。
 	taskID int
+	// listeners 是已註冊的事件監聽器列表，會在接收事件時呼叫相對應的函式。
+	listeners map[string]func(*Event)
 	// keys 是保存於遠端的鍵值組。
 	keys map[string]interface{}
 	// conn 是底層的 WebSocket 連線。
@@ -57,8 +70,15 @@ type Client struct {
 
 // Call 能夠建立一個呼叫遠端指定方法的空白請求。
 func (c *Client) Call(method string) *Request {
+	c.taskID++
 	return &Request{
 		Method: method,
+		ID:     c.taskID,
+		Option: &RequestOption{
+			ChunkSize:     c.Option.ChunkSize,
+			Timeout:       c.Option.Timeout,
+			UploadTimeout: c.Option.UploadTimeout,
+		},
 	}
 }
 
@@ -120,10 +140,28 @@ func (c *Client) writeMessage(data interface{}) error {
 
 //
 func (c *Client) messageHandler() {
-	_, m, err := c.conn.ReadMessage()
+	// 持續接收訊息。
+	_, msg, err := c.conn.ReadMessage()
 	if err != nil {
 
 	}
+	// 將接收到的訊息從 MessagePack 格式映射回本地的回應建構體。
+	var resp *Response
+	if err := msgpack.Unmarshal(msg, &resp); err != nil {
+
+	}
+	// 如果回應沒有編號，又有事件名稱則表示自訂事件。
+	if resp.ID == 0 && resp.Event != "" {
+		//
+		return
+	}
+	// 如果回應有編號，取得並確定相對應的請求存在。
+	req, ok := c.requests[resp.ID]
+	if !ok {
+		return
+	}
+	// 將回應傳入給請求中，解除阻塞狀況。
+	req.response <- resp
 }
 
 // Reconnect 會重新連線，能在斷線或結束連線時使用。
@@ -138,191 +176,37 @@ func (c *Client) Close() error {
 
 // Subscribe 可以訂閱指定的遠端事件，並在之後能透過 `On` 接收。
 func (c *Client) Subscribe(event string, channel string) error {
+	params, err := msgpack.Marshal([]string{event, channel})
+	if err != nil {
+		return err
+	}
 	return c.writeMessage(Request{
 		Method: "MegoSubscribe",
-		Event:  []string{event, channel},
+		Params: params,
 	})
 }
 
 // Unsubscribe 會取消訂閱指定的遠端事件，避免接收到無謂的事件。
 func (c *Client) Unsubscribe(event string, channel string) error {
-
+	params, err := msgpack.Marshal([]string{event, channel})
+	if err != nil {
+		return err
+	}
+	return c.writeMessage(Request{
+		Method: "MegoUnsubscribe",
+		Params: params,
+	})
 }
 
 // On 能夠監聽系統或透過 `Subscribe` 所訂閱的事件，並做出相對應的動作。
 func (c *Client) On(event string, handler func(*Event)) *Client {
-
+	c.listeners[event] = handler
+	return c
 }
 
-// Error 呈現了一個遠端所傳回的錯誤。
-type Error struct {
-	// Code 是錯誤代號。
-	Code int `codec:"c" msgpack:"c"`
-	// Message 是人類可讀的簡略錯誤訊息。
-	Message string `codec:"m" msgpack:"m"`
-	// Data 是錯誤的詳細資料。基於 Message Pack 格式需要透過 `Bind` 映射到本地建構體。
-	Data []byte `codec:"d" msgpack:"d"`
-}
-
-// Error 可以取得錯誤中的文字敘述訊息。
-func (e *Error) Error() string {
-	return e.Message
-}
-
-// Bind 能夠將錯誤的詳細資料映射到本地建構體。
-func (e *Error) Bind(dest interface{}) error {
-	return msgpack.Unmarshal(e.Data, dest)
-}
-
-// Event 呈現了一個接收到的事件。
-type Event struct {
-	// Data 是事件所夾帶的資料。基於 Message Pack 格式需要透過 `Bind` 映射到本地建構體。
-	Data []byte
-}
-
-// Bind 能將事件所夾帶的資料映射到本地的建構體。
-func (e *Event) Bind(dest interface{}) error {
-	return nil
-}
-
-// File 呈現了一個欲上傳的檔案資料。
-type File struct {
-	// Binary 是檔案的二進制。
-	Binary []byte `codec:"b" msgpack:"b"`
-	// ID 是檔案編號，用於區塊組合。
-	ID int `codec:"i" msgpack:"i"`
-	// Parts 呈現區塊的分塊進度。索引 0 表示總共區塊數，索引 1 則是本區塊編號。
-	// 如果這個切片是空的表示此為實體檔案而非區塊。
-	Parts []int `codec:"p" msgpack:"p"`
-	// Name 是檔案的原始名稱。
-	Name string `codec:"n" msgpack:"n"`
-
-	// source 是這個檔案的源頭，也許是 `string`、`[]byte`、`*os.File`
-	source interface{}
-}
-
-// Request 呈現了一個籲發送至遠端伺服器的請求。
-type Request struct {
-	// Method 是欲呼叫的方法名稱。
-	Method string `codec:"m" msgpack:"m"`
-	// Params 是資料或參數。
-	Params []byte `codec:"p" msgpack:"p"`
-	// Files 是此請求所包含的檔案欄位與其內容。
-	Files map[string][]*File `codec:"f" msgpack:"f"`
-	// Event 是欲註冊的事件名稱（索引 0）與頻道（索引 1）。
-	Event []string `codec:"e" msgpack:"e"`
-	// ID 為本次請求編號，若無則為單次通知廣播不需回應。
-	ID int `codec:"i" msgpack:"i"`
-
-	// client 是建立這個請求的客戶端。
-	client *Client
-}
-
-// Send 會保存稍後將發送的資料。
-func (r *Request) Send(data interface{}) *Request {
-	params, err := msgpack.Marshal(data)
-	if err != nil {
-
-	}
-	r.Params = params
-	return r
-}
-
-func (r *Request) storeFile(file interface{}, isChunk bool, fieldName ...string) {
-	var f *File
-	var total int
-
-	// 遞增檔案編號。
-	r.client.fileID++
-
-	// 依照傳入的檔案型態做出不同的讀取方式。
-	switch v := file.(type) {
-	// *os.File 表示檔案寫入者。
-	case *os.File:
-		bin, err := ioutil.ReadAll(v)
-		if err != nil {
-
-		}
-		// 如果本檔案要以區塊上傳，就計算區塊切片數。
-		if isChunk {
-			total
-		}
-		f = &File{
-			Binary: bin,
-			ID:     r.client.fileID,
-			Name:   filepath.Base(v.Name()),
-		}
-
-	// 位元組表示檔案二進制內容。
-	case []byte:
-		f = &File{
-			Binary: v,
-			ID:     r.client.fileID,
-		}
-
-	// 字串型態表示檔案路徑。
-	case string:
-		bin, err := ioutil.ReadFile(v)
-		if err != nil {
-
-		}
-		f = &File{
-			Binary: bin,
-			ID:     r.client.fileID,
-			Name:   filepath.Base(v),
-		}
-	}
-
-	// 取得檔案欄位名稱，若無指定則自動編號取名。
-	var n string
-	if len(fieldName) > 0 {
-		n = fieldName[0]
-	} else {
-		// 遞增檔案名稱編號。
-		r.client.fileNameID++
-		n = fmt.Sprintf("File%d", r.client.fileNameID)
-	}
-
-	// 取得指定檔案欄位並檢查是否存在，不存在則初始化。
-	field, ok := r.Files[n]
-	if !ok {
-		r.Files[n] = []*File{}
-	}
-	// 將本檔案推入指定檔案欄位中。
-	r.Files[n] = append(r.Files[n], f)
-}
-
-func (r *Request) readFile() {
-
-}
-
-// SendFile 會保存稍後將上傳的檔案。
-func (r *Request) SendFile(file interface{}, fieldName ...string) *Request {
-	r.storeFile(file, false, fieldName...)
-	return r
-}
-
-// SendFiles 能夠保存多個檔案並將其歸納為同個檔案欄位。
-func (r *Request) SendFiles(files []interface{}, fieldName ...string) *Request {
-	for _, v := range files {
-		r.SendFile(v, fieldName...)
-	}
-	return r
-}
-
-// SendFileChunks 會保存稍後將以區塊方式上傳的檔案。
-// 注意：請求使用區塊檔案上傳時，不可使用 `SendFile` 夾帶其他檔案。
-func (r *Request) SendFileChunks(file interface{}, fieldName ...string) *Request {
-	r.storeFile(file, true, fieldName...)
-	return r
-}
-
-// End 結束並發送這個請求且不求回應。
-func (r *Request) End() error {
-	return nil
-}
-
-// EndStruct 結束並發送這個請求，且將回應映射到本地建構體上。
-func (r *Request) EndStruct(dest interface{}) error {
-	return nil
+// Off 能移除當初以 `On` 所新增的事件監聽器，但這仍會繼續接收事件資料。
+// 若要停止接收事件資料請使用 `Unsubscribe` 函式。
+func (c *Client) Off(event string) *Client {
+	delete(c.listeners, event)
+	return c
 }
