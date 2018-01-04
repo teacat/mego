@@ -90,7 +90,10 @@ func (c *Context) Unsubscribe(event string, channel string) *Context {
 func (c *Context) Param(indexes ...int) *Param {
 	// 預設索引為 `0` 省去使用者指定的困擾。
 	var index int
-
+	// 如果使用者有指定索引則更改。
+	if len(indexes) != 0 {
+		index = indexes[0]
+	}
 	// 如果已解序的參數陣列長度為空，就表示先前可能還沒解序資料成參數陣列。
 	// 因此我們需要透過 MsgPack 解序資料並存成參數陣列。
 	if len(c.params) == 0 {
@@ -102,12 +105,6 @@ func (c *Context) Param(indexes ...int) *Param {
 			}
 		}
 	}
-
-	// 如果使用者有指定索引則更改。
-	if len(indexes) != 0 {
-		index = indexes[0]
-	}
-
 	// 如果指定的索引位置大於參數陣列長度，則表示無此參數。
 	if index+1 > len(c.params) {
 		return &Param{
@@ -115,7 +112,6 @@ func (c *Context) Param(indexes ...int) *Param {
 			len:  len(c.params),
 		}
 	}
-
 	// 不然就回傳指定的參數資料。
 	return &Param{
 		data: c.params[index],
@@ -334,7 +330,7 @@ func (c *Context) Emit(event string, result interface{}) {
 
 // EmitOthers 會將帶有指定資料的事件向自己以外的所有人廣播。
 func (c *Context) EmitOthers(event string, result interface{}) {
-	c.writeOthers(Response{
+	c.Session.writeOthers(Response{
 		Event:  event,
 		Result: result,
 	})
@@ -346,11 +342,4 @@ func (c *Context) requestHeader(key string) string {
 		return values[0]
 	}
 	return ""
-}
-
-// writeOthers 會將傳入的回應轉譯成 MessagePack 並且寫入除了自己以外的其他客戶端 WebSocket。
-func (c *Context) writeOthers(resp Response) {
-	if msg, err := msgpack.Marshal(resp); err == nil {
-		c.engine.server.websocket.BroadcastOthers(msg, c.Session.websocket)
-	}
 }

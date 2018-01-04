@@ -17,6 +17,8 @@ type Session struct {
 
 	// websocket 是底層的 WebSocket 階段。
 	websocket *melody.Session
+	// engine 是這個階段的父引擎。
+	engine *Engine
 }
 
 // Disconnect 會結束掉這個階段的連線。
@@ -113,9 +115,16 @@ func (s *Session) GetDuration(key string) (v time.Duration) {
 	return
 }
 
-//
+// wrtie 會將指定的回應傳入給此階段。
 func (s *Session) write(resp Response) {
 	if msg, err := msgpack.Marshal(resp); err == nil {
 		s.websocket.WriteBinary(msg)
+	}
+}
+
+// writeOthers 會將傳入的回應轉譯成 MessagePack 並且寫入除了自己以外的其他客戶端 WebSocket。
+func (s *Session) writeOthers(resp Response) {
+	if msg, err := msgpack.Marshal(resp); err == nil {
+		s.engine.server.websocket.BroadcastOthers(msg, s.websocket)
 	}
 }
