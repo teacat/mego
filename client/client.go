@@ -27,7 +27,7 @@ func New(url string) *Client {
 	return &Client{
 		URL:  url,
 		UUID: uuid.NewV4().String(),
-		Option: &ClientOption{
+		Option: &Option{
 			ChunkSize:     ChunkSize,
 			Timeout:       Timeout,
 			UploadTimeout: UploadTimeout,
@@ -35,8 +35,8 @@ func New(url string) *Client {
 	}
 }
 
-// ClientOption 呈現了一個客戶端的設置。
-type ClientOption struct {
+// Option 呈現了一個客戶端的設置。
+type Option struct {
 	// ChunkSize 是預設的區塊分切基準位元組大小。
 	ChunkSize int
 	// Timeout 是預設的逾期秒數。
@@ -52,7 +52,7 @@ type Client struct {
 	// UUID 是此客戶端的獨立編號。
 	UUID string
 	// Option 是這個客戶端的設置選項。
-	Option *ClientOption
+	Option *Option
 
 	// requests 是用來保存請求的儲藏區。
 	requests map[int]Request
@@ -118,14 +118,18 @@ func (c *Client) Connect() error {
 
 // initializeConn 會初始化一個連線，並傳送初始鍵值組至遠端伺服器保存。
 func (c *Client) initializeConn() error {
+	// 將自己的客戶端 UUID 納入鍵值組中。
+	keys := c.keys
+	keys["MegoID"] = c.UUID
+
 	// 將鍵值組以 Message Pack 封裝，方能於伺服端解開。
-	keys, err := msgpack.Marshal(c.keys)
+	params, err := msgpack.Marshal(keys)
 	if err != nil {
 		return err
 	}
 	// 傳送鍵值組至伺服端，啟動連線後的第一個訊息會被作為初始訊息。
 	return c.writeMessage(Request{
-		Params: keys,
+		Params: params,
 	})
 }
 
@@ -166,7 +170,7 @@ func (c *Client) messageHandler() {
 
 // Reconnect 會重新連線，能在斷線或結束連線時使用。
 func (c *Client) Reconnect() error {
-
+	return nil
 }
 
 // Close 會結束並關閉連線。
