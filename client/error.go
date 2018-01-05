@@ -21,6 +21,39 @@ var (
 	ErrAborted = errors.New("mego: the request has been aborted")
 )
 
+const (
+	// StatusError 表示有內部錯誤發生。
+	StatusError = -1000
+	// StatusFull 表示此請求無法被接受，因為額度已滿。例如：使用者加入了一個已滿的聊天室、好友清單已滿。
+	StatusFull = -1001
+	// StatusExists 表示請求的事物已經存在，例如：重複的使用者名稱、電子郵件地址。
+	StatusExists = -1002
+	// StatusInvalid 表示此請求格式不正確。
+	StatusInvalid = -1003
+	// StatusNotFound 表示找不到請求的資源。
+	StatusNotFound = -1004
+	// StatusNotAuthorized 表示使用者需要登入才能進行此請求。
+	StatusNotAuthorized = -1005
+	// StatusNoPermission 表示使用者已登入但沒有相關權限執行此請求。
+	StatusNoPermission = -1006
+	// StatusUnimplemented 表示此功能尚未實作完成。
+	StatusUnimplemented = -1007
+	// StatusTooManyRequests 表示使用者近期發送太多請求，需稍後再試。
+	StatusTooManyRequests = -1008
+	// StatusResourceExhausted 表示使用者可用的額度已耗盡。
+	StatusResourceExhausted = -1009
+	// StatusBusy 表示伺服器正繁忙無法進行執行請求。
+	StatusBusy = -1010
+	// StatusFileRetry 表示檔案區塊發生錯誤，需要重新上傳相同區塊。
+	StatusFileRetry = -1011
+	// StatusFileEmpty 表示上傳的檔案、區塊是空的。
+	StatusFileEmpty = -1012
+	// StatusFileTooLarge 表示檔案過大無法上傳。
+	StatusFileTooLarge = -1013
+	// StatusTimeout 表示這個請求費時過久導致逾期而被終止。
+	StatusTimeout = -1014
+)
+
 // Error 呈現了一個遠端所傳回的錯誤。
 type Error struct {
 	// Code 是錯誤代號。
