@@ -2,9 +2,6 @@ package client
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/vmihailenco/msgpack"
@@ -50,6 +47,11 @@ type Request struct {
 	client *Client
 	// fileNameID 是自動遞增的檔案欄位編號。
 	fileNameID int
+	// isChunking 表示這個請求是否為區塊上傳。
+	isChunking bool
+	// originalParams 是個可供儲藏原先 `Params` 的地方，這是因為區塊上傳只有在最後一塊才會跟 `Params` 一起上傳。
+	// 因此在那之前我們需要先把 `Params` 藏起來。
+	originalParams []byte
 }
 
 // Send 會將稍後要保存的資料轉換成 MessagePack 格式並存入請求中。
@@ -62,51 +64,20 @@ func (r *Request) Send(data interface{}) *Request {
 	return r
 }
 
-//
+// storeFile 會將檔案存放至請求建構體中並在送出時進行總結。
 func (r *Request) storeFile(file interface{}, isChunk bool, fieldName ...string) {
-	var f *File
-	var total int
-
 	// 遞增檔案編號。
 	r.client.fileID++
 
-	// 依照傳入的檔案型態做出不同的讀取方式。
-	switch v := file.(type) {
-	// *os.File 表示檔案寫入者。
-	case *os.File:
-		bin, err := ioutil.ReadAll(v)
-		if err != nil {
-
-		}
-		// 如果本檔案要以區塊上傳，就計算區塊切片數。
-		if isChunk {
-			//total
-		}
-		f = &File{
-			Binary: bin,
-			ID:     r.client.fileID,
-			Name:   filepath.Base(v.Name()),
-		}
-
-	// 位元組表示檔案二進制內容。
-	case []byte:
-		f = &File{
-			Binary: v,
-			ID:     r.client.fileID,
-		}
-
-	// 字串型態表示檔案路徑。
-	case string:
-		bin, err := ioutil.ReadFile(v)
-		if err != nil {
-
-		}
-		f = &File{
-			Binary: bin,
-			ID:     r.client.fileID,
-			Name:   filepath.Base(v),
-		}
+	// 初始化一個檔案。
+	f := &File{
+		ID:        r.client.fileID,
+		source:    file,
+		chunkSize: r.Option.ChunkSize,
 	}
+	// 裝載檔案內容，並且讀取下個區塊片段（如果是區塊上傳的話）。
+	f.load(isChunk)
+	f.next()
 
 	// 取得檔案欄位名稱，若無指定則自動編號取名。
 	var n string
@@ -119,16 +90,12 @@ func (r *Request) storeFile(file interface{}, isChunk bool, fieldName ...string)
 	}
 
 	// 取得指定檔案欄位並檢查是否存在，不存在則初始化。
-	field, ok := r.Files[n]
+	_, ok := r.Files[n]
 	if !ok {
 		r.Files[n] = []*File{}
 	}
 	// 將本檔案推入指定檔案欄位中。
 	r.Files[n] = append(r.Files[n], f)
-}
-
-func (r *Request) readFile() {
-
 }
 
 // SendFile 會保存稍後將上傳的檔案。
@@ -148,45 +115,85 @@ func (r *Request) SendFiles(files []interface{}, fieldName ...string) *Request {
 // SendFileChunks 會保存稍後將以區塊方式上傳的檔案。
 // 注意：請求使用區塊檔案上傳時，不可使用 `SendFile` 夾帶其他檔案。
 func (r *Request) SendFileChunks(file interface{}, fieldName ...string) *Request {
+	r.isChunking = true
 	r.storeFile(file, true, fieldName...)
 	return r
 }
 
+// timeout 會在指定的逾期時間後發送逾期錯誤給自己。
+func (r *Request) timeout() {
+	go func() {
+		// 等待逾期時間。
+		<-time.After(r.Option.Timeout)
+		// 傳遞一個逾期回應給自己。
+		r.response <- &Response{
+			ID: r.ID,
+			Error: Error{
+				Code:    StatusTimeout,
+				Message: ErrTimeout.Error(),
+			},
+		}
+	}()
+}
+
 // End 結束並發送這個請求且不求回應。
 func (r *Request) End() error {
-	// 向伺服端發送請求。
-	err := r.client.writeMessage(r)
-	if err != nil {
-		return err
-	}
-	// 阻塞並等待此請求的回應。
-	resp := <-r.response
-	if resp.Error.Code != 0 {
-		return resp.Error
-	}
-	// 如果回應有事件名稱則依照相對應方法處理。
-	switch resp.Event {
-	case "MegoChunkNext":
-	case "MegoChunkAbort":
-		return ErrAborted
-	}
-
-	return nil
+	return r.EndStruct(nil)
 }
 
 // EndStruct 結束並發送這個請求，且將回應映射到本地建構體上。
 func (r *Request) EndStruct(dest interface{}) error {
+	var chunk *File
+	// 如果本請求是區塊上傳，那麼先暫時把資料藏在緩衝區。
+	// 只發送區塊檔案，直至最後一個區塊才將資料從緩衝區取出並一同上傳。
+	if r.isChunking {
+		for _, v := range r.Files {
+			chunk = v[0]
+		}
+		// 如果這是第一個區塊，而且不是最後一塊。
+		if chunk.Parts[0] == 0 && chunk.Parts[0] > chunk.Parts[1] {
+			r.originalParams = r.Params
+			r.Params = []byte{}
+		}
+		// 如果這是最後一塊。
+		if chunk.Parts[0] == chunk.Parts[1] {
+			r.Params = r.originalParams
+			r.originalParams = []byte{}
+		}
+	}
+
 	// 向伺服端發送請求。
 	err := r.client.writeMessage(r)
 	if err != nil {
 		return err
 	}
+	// 啟動逾時檢查。
+	//r.timeout()
+
 	// 阻塞並等待此請求的回應。
-	response := <-r.response
-	if response.Error.Code != 0 {
-		return response.Error
+	resp := <-r.response
+
+	// 如果回應有事件名稱則依照相對應方法處理。
+	switch resp.Event {
+	case "MegoChunkNext":
+		// 在區塊中載入下一段內容。
+		chunk.next()
+		// 呼叫自己重新發送相同的內容。
+		if err := r.End(); err != nil {
+			return err
+		}
+		return nil
+	case "MegoChunkAbort":
+		return ErrAborted
 	}
-	if err := msgpack.Unmarshal(response.Result, dest); err != nil {
+
+	//
+	if resp.Error.Code != 0 {
+		return resp.Error
+	}
+
+	// 將最終回應映射到本地建構體上。
+	if err := msgpack.Unmarshal(resp.Result, dest); err != nil {
 		return err
 	}
 	return nil
