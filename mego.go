@@ -1,6 +1,7 @@
 package mego
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -39,42 +40,36 @@ const (
 )
 
 const (
-	// 狀態碼範圍如下：
-	// 0 ~ 50 正常、51 ~ 100 錯誤、101 ~ 999 自訂狀態碼。
-
-	// StatusFileNext 表示此檔案區塊已處理完畢，需上傳下個區塊。
-	StatusFileNext = 10
-	// StatusFileAbort 表示終止整個檔案上傳進度。
-	StatusFileAbort = 11
-
 	// StatusError 表示有內部錯誤發生。
-	StatusError = 51
+	StatusError = -1000
 	// StatusFull 表示此請求無法被接受，因為額度已滿。例如：使用者加入了一個已滿的聊天室、好友清單已滿。
-	StatusFull = 52
+	StatusFull = -1001
 	// StatusExists 表示請求的事物已經存在，例如：重複的使用者名稱、電子郵件地址。
-	StatusExists = 53
+	StatusExists = -1002
 	// StatusInvalid 表示此請求格式不正確。
-	StatusInvalid = 54
+	StatusInvalid = -1003
 	// StatusNotFound 表示找不到請求的資源。
-	StatusNotFound = 55
+	StatusNotFound = -1004
 	// StatusNotAuthorized 表示使用者需要登入才能進行此請求。
-	StatusNotAuthorized = 56
+	StatusNotAuthorized = -1005
 	// StatusNoPermission 表示使用者已登入但沒有相關權限執行此請求。
-	StatusNoPermission = 57
+	StatusNoPermission = -1006
 	// StatusUnimplemented 表示此功能尚未實作完成。
-	StatusUnimplemented = 58
+	StatusUnimplemented = -1007
 	// StatusTooManyRequests 表示使用者近期發送太多請求，需稍後再試。
-	StatusTooManyRequests = 59
+	StatusTooManyRequests = -1008
 	// StatusResourceExhausted 表示使用者可用的額度已耗盡。
-	StatusResourceExhausted = 60
+	StatusResourceExhausted = -1009
 	// StatusBusy 表示伺服器正繁忙無法進行執行請求。
-	StatusBusy = 61
+	StatusBusy = -1010
 	// StatusFileRetry 表示檔案區塊發生錯誤，需要重新上傳相同區塊。
-	StatusFileRetry = 70
+	StatusFileRetry = -1011
 	// StatusFileEmpty 表示上傳的檔案、區塊是空的。
-	StatusFileEmpty = 71
+	StatusFileEmpty = -1012
 	// StatusFileTooLarge 表示檔案過大無法上傳。
-	StatusFileTooLarge = 72
+	StatusFileTooLarge = -1013
+	// StatusTimeout 表示這個請求費時過久導致逾期而被終止。
+	StatusTimeout = -1014
 )
 
 var (
@@ -253,7 +248,7 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 
 	// 取得這個 WebSocket 階段對應的 Mego 階段。
 	// 如果沒有的話則當此請求為初次設置。
-	id, ok := s.Get("ID")
+	id, ok := s.Get("MegoID")
 	if !ok {
 		var keys map[string]interface{}
 
@@ -283,12 +278,13 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		// 將 Mego 階段放入引擎中保存。
 		e.Sessions[id] = &Session{
 			ID:        id,
+			engine:    e,
 			websocket: s,
 		}
 	}
 
 	// 重新取得一次此客戶端的獨立 UUID 編號。
-	id, _ = s.Get("ID")
+	id, _ = s.Get("MegoID")
 
 	// 透過獨有編號在引擎中找出相對應的階段資料。
 	sess, ok := e.Sessions[id.(string)]
@@ -373,13 +369,17 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 // chunkHandler 是預設的區塊處理函式，這會接收區塊並組成一個檔案。
 func chunkHandler(c *Context, raw *RawFile, dest *File) ChunkStatus {
 	// 在系統中建立並開啟一個新的暫存檔案。
-	t, err := ioutil.TempFile("", "")
+	t, err := os.OpenFile(fmt.Sprintf("%s/MEGO_CHUNK_%s_%d", os.TempDir(), c.Session.ID, raw.ID), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 
 	}
 	// 將使用者上傳的位元組內容寫入暫存檔案中，並取得該位元組長度做為檔案大小。
 	size, err := t.Write(raw.Binary)
 	if err != nil {
+
+	}
+	// 關閉檔案。
+	if err := t.Close(); err != nil {
 
 	}
 
@@ -389,7 +389,7 @@ func chunkHandler(c *Context, raw *RawFile, dest *File) ChunkStatus {
 	current := raw.Parts[1]
 
 	// 如果這是最後一個區塊就回傳處理完成狀態碼。
-	if current < total {
+	if current == total {
 		// 從檔案名稱中取得名稱與副檔名。
 		ext := filepath.Ext(raw.Name)
 		name := strings.TrimSuffix(raw.Name, ext)
