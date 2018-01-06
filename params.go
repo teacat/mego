@@ -38,6 +38,18 @@ func (p *Param) GetFloat64() (v float64) {
 
 // GetInt 能夠以正整數取得指定的參數。
 func (p *Param) GetInt() (v int) {
+	if val, ok := p.data.(int8); ok {
+		v = int(val)
+	}
+	if val, ok := p.data.(int16); ok {
+		v = int(val)
+	}
+	if val, ok := p.data.(int32); ok {
+		v = int(val)
+	}
+	if val, ok := p.data.(int64); ok {
+		v = int(val)
+	}
 	if val, ok := p.data.(int); ok {
 		v = val
 	}
