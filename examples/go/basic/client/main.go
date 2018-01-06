@@ -8,7 +8,10 @@ import (
 
 func main() {
 	// 建立新的 Mego 客戶端。
-	client := client.NewClient("localhost:5000")
+	client := client.New("ws://localhost:5000")
+	if err := client.Connect(); err != nil {
+		panic(err)
+	}
 
 	var v int
 	// 呼叫遠端的 `Sum` 方法。
@@ -16,9 +19,7 @@ func main() {
 		// 並且傳入兩個數字參數要求加總。
 		Send([]int{5, 3}).
 		// 將回傳的資料映射到本地的變數 `v`。
-		Bind(&v).
-		// 發送資料。
-		End()
+		EndStruct(&v)
 	if err != nil {
 		panic(err)
 	}
