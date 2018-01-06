@@ -4,9 +4,6 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
-	"time"
-
-	"github.com/TeaMeow/Mego"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -18,7 +15,7 @@ type dataStruct struct {
 }
 
 func init() {
-	go func() {
+	/*go func() {
 		e := mego.New()
 		e.Register("Test", func(c *mego.Context) {
 			var d dataStruct
@@ -87,14 +84,15 @@ func init() {
 				"Password": d.Password,
 			})
 		})
-	}()
+		e.Run()
+	}()*/
 	// 等待一秒讓引擎初始化並運作。
-	<-time.After(time.Second * 1)
+	// <-time.After(time.Second * 1)
 }
 
 func TestClientMain(t *testing.T) {
-	assert := assert.New(t)
-	client = New("localhost:5000")
+	//assert := assert.New(t)
+	client = New("ws://localhost:5000")
 }
 
 func TestClientConnect(t *testing.T) {
@@ -104,9 +102,9 @@ func TestClientConnect(t *testing.T) {
 }
 
 func TestClientClose(t *testing.T) {
-	assert := assert.New(t)
-	err := client.Close()
-	assert.NoError(err)
+	//assert := assert.New(t)
+	//err := client.Close()
+	//assert.NoError(err)
 }
 
 func TestClientReconnect(t *testing.T) {
@@ -241,11 +239,7 @@ func TestClientSendFiles(t *testing.T) {
 	assert := assert.New(t)
 	file, err := os.Open("./README.md")
 	assert.NoError(err)
-	content, err := ioutil.ReadAll(file)
-	assert.NoError(err)
 	file2, err := os.Open("./client.go")
-	assert.NoError(err)
-	content2, err := ioutil.ReadAll(file2)
 	assert.NoError(err)
 	err = client.
 		Call("TestFiles").
@@ -261,11 +255,7 @@ func TestClientSendFileSlices(t *testing.T) {
 	assert := assert.New(t)
 	file, err := os.Open("./README.md")
 	assert.NoError(err)
-	content, err := ioutil.ReadAll(file)
-	assert.NoError(err)
 	file2, err := os.Open("./client.go")
-	assert.NoError(err)
-	content2, err := ioutil.ReadAll(file2)
 	assert.NoError(err)
 	err = client.
 		Call("TestFileSlice").
@@ -281,15 +271,9 @@ func TestClientSendFileMix(t *testing.T) {
 	assert := assert.New(t)
 	file, err := os.Open("./README.md")
 	assert.NoError(err)
-	content, err := ioutil.ReadAll(file)
-	assert.NoError(err)
 	file2, err := os.Open("./client.go")
 	assert.NoError(err)
-	content2, err := ioutil.ReadAll(file2)
-	assert.NoError(err)
 	file3, err := os.Open("./error.go")
-	assert.NoError(err)
-	content3, err := ioutil.ReadAll(file2)
 	assert.NoError(err)
 	err = client.
 		Call("TestFileMix").
@@ -378,14 +362,12 @@ func TestClientSendFileChunksMix(t *testing.T) {
 }
 
 func TestClientSubscribe(t *testing.T) {
-	var resp dataStruct
 	assert := assert.New(t)
 	err := client.Subscribe("TestEvent", "TestChannel")
 	assert.NoError(err)
 }
 
 func TestClientSubscribeError(t *testing.T) {
-	var resp dataStruct
 	assert := assert.New(t)
 	err := client.Subscribe("TestRefuseEvent", "TestChannel")
 	assert.Error(err)
@@ -393,19 +375,16 @@ func TestClientSubscribeError(t *testing.T) {
 }
 
 func TestClientOn(t *testing.T) {
-	var resp dataStruct
-	assert := assert.New(t)
+	//assert := assert.New(t)
 	client.On("TestEvent", func(e *Event) {})
 }
 
 func TestClientOff(t *testing.T) {
-	var resp dataStruct
-	assert := assert.New(t)
+	//assert := assert.New(t)
 	client.Off("TestEvent")
 }
 
 func TestClientUnsubscribe(t *testing.T) {
-	var resp dataStruct
 	assert := assert.New(t)
 	err := client.Unsubscribe("TestEvent", "TestChannel")
 	assert.NoError(err)
