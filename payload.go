@@ -7,7 +7,7 @@ type Request struct {
 	// Files 是此請求所包含的檔案欄位與其內容。
 	Files map[string][]*RawFile `codec:"f" msgpack:"f"`
 	// Params 是資料或參數。
-	Params []byte `codec:"p" msgpack:"p"`
+	Params interface{} `codec:"p" msgpack:"p"`
 	// ID 為本次請求編號，若無則為單次通知廣播不需回應。
 	ID int `codec:"i" msgpack:"i"`
 }
