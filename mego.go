@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	mirror "github.com/TeaMeow/Mirror"
 	uuid "github.com/satori/go.uuid"
 	"github.com/vmihailenco/msgpack"
 
@@ -188,7 +189,7 @@ func (e *Engine) Run(port ...string) {
 	m.HandleMessage(e.messageHandler)
 	// 將所有斷線的請求轉交給斷線處理函式。
 	m.HandleDisconnect(e.disconnectHandler)
-
+	fmt.Println("Running...")
 	// 開始在指定埠口監聽 HTTP 請求並交由底層伺服器處理。
 	http.ListenAndServe(p, e.server)
 }
@@ -251,11 +252,9 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 	id, ok := s.Get("MegoID")
 	if !ok {
 		var keys map[string]interface{}
-
 		// 將接收到的資料映射到本地的 map 型態，並保存到階段資料中的鍵值組。
-		if err := msgpack.Unmarshal(req.Params, &keys); err != nil {
-			return
-		}
+		mirror.Cast(req.Params, &keys)
+
 		// 如果鍵值組中沒有 Mego 客戶端建立的獨立編號就離開。
 		i, ok := keys["MegoID"]
 		if !ok {
@@ -273,7 +272,7 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		}
 
 		// 在底層階段存放此階段的編號。
-		s.Set("ID", id)
+		s.Set("MegoID", id)
 
 		// 將 Mego 階段放入引擎中保存。
 		e.Sessions[id] = &Session{
@@ -285,6 +284,9 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 
 	// 重新取得一次此客戶端的獨立 UUID 編號。
 	id, _ = s.Get("MegoID")
+	if id == nil {
+		return
+	}
 
 	// 透過獨有編號在引擎中找出相對應的階段資料。
 	sess, ok := e.Sessions[id.(string)]
@@ -339,7 +341,6 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 		if !ok {
 			return
 		}
-
 		// 建立一個上下文建構體。
 		ctx := &Context{
 			Session:  sess,
@@ -347,6 +348,7 @@ func (e *Engine) messageHandler(s *melody.Session, msg []byte) {
 			ID:       req.ID,
 			Request:  s.Request,
 			data:     req.Params,
+			files:    make(map[string][]*File),
 			handlers: e.handlers,
 		}
 		// 將該方法的處理函式推入上下文建構體中供依序執行。
@@ -482,10 +484,10 @@ func (e *Engine) fileHandler(c *Context, fields map[string][]*RawFile) bool {
 			// 從檔案名稱中取得名稱與副檔名。
 			ext := filepath.Ext(f.Name)
 			name := strings.TrimSuffix(f.Name, ext)
-
+			fmt.Printf("%+v", f)
 			// 如果副檔名長度過短就是出問題了。
 			if len(ext) < 2 {
-
+				panic("Fuck")
 			}
 
 			// 將這個檔案整理後推入至上下文建構體中的檔案欄位。
@@ -551,7 +553,7 @@ func (e *Engine) Register(method string, handler ...HandlerFunc) *Method {
 		Name:     method,
 		Handlers: handler,
 	}
-	e.Methods[method] = m
+	e.Methods[strings.ToUpper(method)] = m
 	return m
 }
 
