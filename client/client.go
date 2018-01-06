@@ -32,6 +32,8 @@ func New(url string) *Client {
 			Timeout:       Timeout,
 			UploadTimeout: UploadTimeout,
 		},
+		requests: make(map[int]*Request),
+		keys:     make(map[string]interface{}),
 	}
 }
 
@@ -45,7 +47,7 @@ type Option struct {
 	UploadTimeout time.Duration
 }
 
-// Client 是一個客戶端。
+// Client 是一個客戶z端。
 type Client struct {
 	// URL 是遠端 Mego 伺服器的網址。
 	URL string
@@ -55,7 +57,7 @@ type Client struct {
 	Option *Option
 
 	// requests 是用來保存請求的儲藏區。
-	requests map[int]Request
+	requests map[int]*Request
 	// fileID 是自動遞增的檔案編號。
 	fileID int
 	// taskID 是遞加的請求編號。
@@ -70,15 +72,23 @@ type Client struct {
 
 // Call 能夠建立一個呼叫遠端指定方法的空白請求。
 func (c *Client) Call(method string) *Request {
+	if c.conn == nil {
+		panic(ErrClosed)
+	}
+	//
 	c.taskID++
+	//
 	return &Request{
 		Method: method,
+		Files:  make(map[string][]*File),
 		ID:     c.taskID,
 		Option: &RequestOption{
 			ChunkSize:     c.Option.ChunkSize,
 			Timeout:       c.Option.Timeout,
 			UploadTimeout: c.Option.UploadTimeout,
 		},
+		response: make(chan *Response, 1),
+		client:   c,
 	}
 }
 
@@ -98,7 +108,7 @@ func (c *Client) Connect() error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	//defer c.Close()
 
 	// 將連線保存至客戶端建構體內。
 	c.conn = conn
@@ -122,19 +132,14 @@ func (c *Client) initializeConn() error {
 	keys := c.keys
 	keys["MegoID"] = c.UUID
 
-	// 將鍵值組以 Message Pack 封裝，方能於伺服端解開。
-	params, err := msgpack.Marshal(keys)
-	if err != nil {
-		return err
-	}
 	// 傳送鍵值組至伺服端，啟動連線後的第一個訊息會被作為初始訊息。
 	return c.writeMessage(Request{
-		Params: params,
+		Params: keys,
 	})
 }
 
 // writeMessage 會以 Message Pack 包裝訊息並傳遞至遠端伺服器。
-func (c *Client) writeMessage(data interface{}) error {
+func (c *Client) writeMessage(data Request) error {
 	msg, err := msgpack.Marshal(data)
 	if err != nil {
 		return err
@@ -145,25 +150,32 @@ func (c *Client) writeMessage(data interface{}) error {
 //
 func (c *Client) messageHandler() {
 	// 持續接收訊息。
-	_, msg, err := c.conn.ReadMessage()
+	m, msg, err := c.conn.ReadMessage()
 	if err != nil {
-
+		panic(err)
 	}
+	if m == -1 {
+		return
+	}
+
 	// 將接收到的訊息從 MessagePack 格式映射回本地的回應建構體。
 	var resp *Response
 	if err := msgpack.Unmarshal(msg, &resp); err != nil {
-
+		panic(err)
 	}
+
 	// 如果回應沒有編號，又有事件名稱則表示自訂事件。
 	if resp.ID == 0 && resp.Event != "" {
 		//
 		return
 	}
+
 	// 如果回應有編號，取得並確定相對應的請求存在。
 	req, ok := c.requests[resp.ID]
 	if !ok {
 		return
 	}
+
 	// 將回應傳入給請求中，解除阻塞狀況。
 	req.response <- resp
 }
@@ -180,25 +192,17 @@ func (c *Client) Close() error {
 
 // Subscribe 可以訂閱指定的遠端事件，並在之後能透過 `On` 接收。
 func (c *Client) Subscribe(event string, channel string) error {
-	params, err := msgpack.Marshal([]string{event, channel})
-	if err != nil {
-		return err
-	}
 	return c.writeMessage(Request{
 		Method: "MegoSubscribe",
-		Params: params,
+		Params: []string{event, channel},
 	})
 }
 
 // Unsubscribe 會取消訂閱指定的遠端事件，避免接收到無謂的事件。
 func (c *Client) Unsubscribe(event string, channel string) error {
-	params, err := msgpack.Marshal([]string{event, channel})
-	if err != nil {
-		return err
-	}
 	return c.writeMessage(Request{
 		Method: "MegoUnsubscribe",
-		Params: params,
+		Params: []string{event, channel},
 	})
 }
 
