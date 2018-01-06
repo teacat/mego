@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vmihailenco/msgpack"
+	mirror "github.com/TeaMeow/Mirror"
 )
 
 // RequestOption 呈現了一個請求的設置。
@@ -21,7 +21,7 @@ type Response struct {
 	// Event 是欲呼叫的客戶端事件名稱。
 	Event string `codec:"v" msgpack:"v"`
 	// Result 是正常回應時的資料酬載。
-	Result []byte `codec:"r" msgpack:"r"`
+	Result interface{} `codec:"r" msgpack:"r"`
 	// Error 是錯誤回應時的資料酬載，與 Result 兩者擇其一，不會同時使用。
 	Error Error `codec:"e" msgpack:"e"`
 	// ID 是當時發送此請求的編號，用以讓客戶端比對是哪個請求所造成的回應。
@@ -33,7 +33,7 @@ type Request struct {
 	// Method 是欲呼叫的方法名稱。
 	Method string `codec:"m" msgpack:"m"`
 	// Params 是資料或參數。
-	Params []byte `codec:"p" msgpack:"p"`
+	Params interface{} `codec:"p" msgpack:"p"`
 	// Files 是此請求所包含的檔案欄位與其內容。
 	Files map[string][]*File `codec:"f" msgpack:"f"`
 	// ID 為本次請求編號，若無則為單次通知廣播不需回應。
@@ -51,16 +51,14 @@ type Request struct {
 	isChunking bool
 	// originalParams 是個可供儲藏原先 `Params` 的地方，這是因為區塊上傳只有在最後一塊才會跟 `Params` 一起上傳。
 	// 因此在那之前我們需要先把 `Params` 藏起來。
-	originalParams []byte
+	originalParams interface{}
+	// err 是這個請求建立與執行時所發生的錯誤，會在發送時爆發。
+	err error
 }
 
 // Send 會將稍後要保存的資料轉換成 MessagePack 格式並存入請求中。
 func (r *Request) Send(data interface{}) *Request {
-	params, err := msgpack.Marshal(data)
-	if err != nil {
-
-	}
-	r.Params = params
+	r.Params = data
 	return r
 }
 
@@ -68,15 +66,18 @@ func (r *Request) Send(data interface{}) *Request {
 func (r *Request) storeFile(file interface{}, isChunk bool, fieldName ...string) {
 	// 遞增檔案編號。
 	r.client.fileID++
-
 	// 初始化一個檔案。
 	f := &File{
 		ID:        r.client.fileID,
 		source:    file,
 		chunkSize: r.Option.ChunkSize,
 	}
-	// 裝載檔案內容，並且讀取下個區塊片段（如果是區塊上傳的話）。
-	f.load(isChunk)
+	// 裝載檔案內容。
+	err := f.load(isChunk)
+	if err != nil {
+		r.err = err
+	}
+	// 讀取下個區塊片段（如果是區塊上傳的話）
 	f.next()
 
 	// 取得檔案欄位名稱，若無指定則自動編號取名。
@@ -143,6 +144,10 @@ func (r *Request) End() error {
 
 // EndStruct 結束並發送這個請求，且將回應映射到本地建構體上。
 func (r *Request) EndStruct(dest interface{}) error {
+	if r.err != nil {
+		return r.err
+	}
+
 	var chunk *File
 	// 如果本請求是區塊上傳，那麼先暫時把資料藏在緩衝區。
 	// 只發送區塊檔案，直至最後一個區塊才將資料從緩衝區取出並一同上傳。
@@ -162,14 +167,16 @@ func (r *Request) EndStruct(dest interface{}) error {
 		}
 	}
 
+	// 將此請求保存至客戶端的請求切片中，之後才能在其他函式取得此請求。
+	r.client.requests[r.ID] = r
+
 	// 向伺服端發送請求。
-	err := r.client.writeMessage(r)
+	err := r.client.writeMessage(*r)
 	if err != nil {
 		return err
 	}
 	// 啟動逾時檢查。
 	//r.timeout()
-
 	// 阻塞並等待此請求的回應。
 	resp := <-r.response
 
@@ -187,14 +194,11 @@ func (r *Request) EndStruct(dest interface{}) error {
 		return ErrAborted
 	}
 
-	//
+	// 如果回應的錯誤碼不是 `0` 則表示有錯誤，回傳錯誤。
 	if resp.Error.Code != 0 {
 		return resp.Error
 	}
 
 	// 將最終回應映射到本地建構體上。
-	if err := msgpack.Unmarshal(resp.Result, dest); err != nil {
-		return err
-	}
-	return nil
+	return mirror.Cast(resp.Result, dest)
 }
