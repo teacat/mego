@@ -19,6 +19,8 @@ var (
 	ErrSubscriptionRefused = errors.New("mego: the event subscription was refused")
 	// ErrAborted 表示請求已被終止。
 	ErrAborted = errors.New("mego: the request has been aborted")
+	// ErrEmptyRequest 表示欲發送的請求是個 `nil`。
+	ErrEmptyRequest = errors.New("mego: the request is empty")
 )
 
 const (
