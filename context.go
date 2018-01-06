@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vmihailenco/msgpack"
+	mirror "github.com/TeaMeow/Mirror"
 )
 
 const (
@@ -32,7 +32,7 @@ type Context struct {
 	Method *Method
 
 	// data 呈現了本次接收到的資料，主要是 MsgPack 內容格式。
-	data []byte
+	data interface{}
 	// index 是目前所執行的處理函式索引。
 	index int8
 	// handlers 存放此請求將會呼叫的所有處理函式。
@@ -97,8 +97,8 @@ func (c *Context) Param(indexes ...int) *Param {
 	// 如果已解序的參數陣列長度為空，就表示先前可能還沒解序資料成參數陣列。
 	// 因此我們需要透過 MsgPack 解序資料並存成參數陣列。
 	if len(c.params) == 0 {
-		// 如果錯誤發生回傳一個空的參數建構體。
-		if err := msgpack.Unmarshal(c.data, &c.params); err != nil {
+		if err := mirror.Cast(c.data, &c.params); err != nil {
+			// 如果發生錯誤則回傳一個空的參數。
 			return &Param{
 				data: nil,
 				len:  len(c.params),
@@ -169,15 +169,12 @@ func (c *Context) RespondWithError(code int, data interface{}, err error) {
 
 // Bind 能夠將接收到的資料映射到本地建構體。
 func (c *Context) Bind(dest interface{}) error {
-	return msgpack.Unmarshal(c.data, dest)
+	return mirror.Cast(c.data, dest)
 }
 
 // MustBind 和 `Bind` 相同，差異在於若映射失敗會呼叫 `panic` 並阻止此次請求繼續執行。
 func (c *Context) MustBind(dest interface{}) error {
-	if err := msgpack.Unmarshal(c.data, dest); err != nil {
-		panic(err)
-	}
-	return nil
+	return mirror.Cast(c.data, dest)
 }
 
 // Set 會在本次上下文建構體中存放指定的鍵值組內容，可供其他處理函式存取。
@@ -273,8 +270,8 @@ func (c *Context) GetDuration(key string) (v time.Duration) {
 }
 
 // GetFile 會回傳一個指定檔案欄位中的檔案。
-func (c *Context) GetFile(name string) (*File, error) {
-	f, err := c.GetFiles(name)
+func (c *Context) GetFile(name ...string) (*File, error) {
+	f, err := c.GetFiles(name...)
 	if err != nil {
 		return nil, err
 	}
@@ -282,8 +279,8 @@ func (c *Context) GetFile(name string) (*File, error) {
 }
 
 // MustGetFile 會回傳一個指定檔案欄位中的檔案，並且在沒有該檔案的時候呼叫 `panic` 終止此請求。
-func (c *Context) MustGetFile(name string) *File {
-	f, err := c.GetFile(name)
+func (c *Context) MustGetFile(name ...string) *File {
+	f, err := c.GetFile(name...)
 	if err != nil {
 		panic(err)
 	}
@@ -291,8 +288,13 @@ func (c *Context) MustGetFile(name string) *File {
 }
 
 // GetFiles 會取得指定檔案欄位中的全部檔案，並回傳一個檔案切片供開發者遍歷。
-func (c *Context) GetFiles(name string) ([]*File, error) {
-	f, ok := c.files[name]
+func (c *Context) GetFiles(name ...string) ([]*File, error) {
+	n := "File1"
+	if len(name) > 0 {
+		n = name[0]
+	}
+
+	f, ok := c.files[n]
 	if !ok {
 		return nil, ErrFileNotFound
 	}
@@ -303,8 +305,8 @@ func (c *Context) GetFiles(name string) ([]*File, error) {
 }
 
 // MustGetFiles 會取得指定檔案欄位中的全部檔案，並回傳一個檔案切片供開發者遍歷。沒有該檔案欄位的時候會呼叫 `panic` 終止此請求。
-func (c *Context) MustGetFiles(name string) []*File {
-	f, err := c.GetFiles(name)
+func (c *Context) MustGetFiles(name ...string) []*File {
+	f, err := c.GetFiles(name...)
 	if err != nil {
 		panic(err)
 	}
