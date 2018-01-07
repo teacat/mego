@@ -80,11 +80,6 @@ err = ws.Call("Sum").
 		"NumberA": 5,
 	}).
 	End()
-
-// 呼叫遠端的 `Sum` 方法，並傳入一個 JSON 內容。
-err = ws.Call("Sum").
-	Send(`{"NumberA": 5}`).
-	End()
 ```
 
 ### 送出資料
