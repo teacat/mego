@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -58,7 +59,21 @@ type Request struct {
 
 // Send 會將稍後要保存的資料轉換成 MessagePack 格式並存入請求中。
 func (r *Request) Send(data interface{}) *Request {
-	r.Params = data
+	var j interface{}
+
+	switch v := data.(type) {
+	// 如果傳入的資料是字串格式，則當作 JSON 字串並將其轉換成規格資料。
+	case string:
+		var j interface{}
+		if err := json.Unmarshal([]byte(v), &j); err != nil {
+			r.err = err
+		}
+	// 其餘則繼續當作普通 `interface{}` 使用。
+	default:
+		j = data
+	}
+
+	r.Params = j
 	return r
 }
 
